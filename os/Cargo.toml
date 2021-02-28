@@ -1,0 +1,18 @@
+[package]
+name = "os"
+version = "0.1.0"
+authors = ["liuhz"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+log = "0.4"
+
+# 开发模板, 对应`cargo build`命令
+[profile.dev]
+opt-level = 0  # 控制编译器的 --opt-level 参数，也就是优化参数
+debug = true   # 控制编译器是否开启 `-g` 参数
+debug-assertions = true  # 控制调试断言是否开启
+lto = false # forbidden Link Time Optimization

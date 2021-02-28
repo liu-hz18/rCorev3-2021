@@ -1,0 +1,9 @@
+# 使得 cargo run 等价于 cargo run --target riscv64gc-unknown-none-elf
+[build]
+target = "riscv64gc-unknown-none-elf"
+
+# 通过 链接脚本 (Linker Script) os/src/linker.ld 调整链接器的行为，使得最终生成的可执行文件的内存布局符合我们的预期
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-Clink-arg=-Tsrc/linker.ld", "-Cforce-frame-pointers=yes"
+]
