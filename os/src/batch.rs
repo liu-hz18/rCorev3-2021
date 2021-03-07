@@ -2,10 +2,10 @@ use core::cell::RefCell;
 use lazy_static::*;
 use crate::trap::TrapContext;
 
-const USER_STACK_SIZE: usize = 4096 * 2; // 8KiB 栈
+pub const USER_STACK_SIZE: usize = 4096 * 2; // 8KiB 栈
 const KERNEL_STACK_SIZE: usize = 4096 * 2; // 8KiB 栈
 const MAX_APP_NUM: usize = 16;
-const APP_BASE_ADDRESS: usize = 0x80400000;
+pub const APP_BASE_ADDRESS: usize = 0x80400000;
 const APP_SIZE_LIMIT: usize = 0x20000;
 
 // 在批处理操作系统中加入一段汇编代码，实现从用户栈切换到内核栈， 并在内核栈上保存应用程序执行流的寄存器状态。
@@ -65,7 +65,7 @@ impl AppManagerInner {
     pub fn print_app_info(&self) {
         println!("[kernel] num_app = {}", self.num_app);
         for i in 0..self.num_app {
-            println!("[kernel] app_{} [{:#x}, {:#x})", i, self.app_start[i], self.app_start[i + 1]);
+            println!("[kernel] app_{} [{:#x}, {:#x}) -> [{:#x}, {:#x})", i, self.app_start[i], self.app_start[i + 1], APP_BASE_ADDRESS, APP_BASE_ADDRESS+self.app_start[i + 1]-self.app_start[i]);
         }
     }
 
@@ -97,6 +97,8 @@ impl AppManagerInner {
 
     pub fn get_current_app(&self) -> usize { self.current_app }
 
+    pub fn get_current_app_runtime_end(&self) -> usize { APP_BASE_ADDRESS + self.app_start[self.current_app + 1] - self.app_start[self.current_app] }
+
     pub fn move_to_next_app(&mut self) {
         self.current_app += 1;
     }
@@ -126,12 +128,28 @@ lazy_static! {
 }
 
 pub fn init() {
+    // 打印 UserStack 和Kernel Stack 地址范围
+    // 8KiB 栈
+    println!("[kernel] Kernel Stack [{:#x}, {:#x})", KERNEL_STACK.data.as_ptr() as usize, KERNEL_STACK.data.as_ptr() as usize + KERNEL_STACK_SIZE);
+    println!("[kernel] User   Stack [{:#x}, {:#x})", USER_STACK.data.as_ptr() as usize, USER_STACK.data.as_ptr() as usize + USER_STACK_SIZE);
     // 调用 print_app_info 的时候第一次用到了全局变量 APP_MANAGER ，它也是在这个时候完成初始化
     print_app_info();
 }
 
 pub fn print_app_info() {
     APP_MANAGER.inner.borrow().print_app_info();
+}
+
+pub fn get_current_app_runtime_end() -> usize {
+    APP_MANAGER.inner.borrow().get_current_app_runtime_end()
+}
+
+pub fn get_current_app() -> usize {
+    APP_MANAGER.inner.borrow().get_current_app()
+}
+
+pub fn addr_in_user_stack(addr: usize) -> bool {
+    addr > USER_STACK.data.as_ptr() as usize && addr < USER_STACK.data.as_ptr() as usize + USER_STACK_SIZE
 }
 
 // 批处理操作系统的核心操作，即加载并运行下一个应用程序
