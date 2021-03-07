@@ -1,0 +1,9 @@
+[package]
+name = "user_lib" # 我们对于库的名字进行了设置
+version = "0.1.0"
+authors = ["liuhz"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

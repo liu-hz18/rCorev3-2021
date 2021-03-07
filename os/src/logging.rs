@@ -21,12 +21,12 @@ pub fn init() {
         Some("DEBUG") => LevelFilter::Debug,
         Some("TRACE") => LevelFilter::Trace,
         Some("OFF") => LevelFilter::Off,
-        Some(level) => {
-            println!("\x1b[93m[LOGGER][0] logging level {:?} is not supported. use default level: `INFO`\x1b[0m", level);
+        Some(_level) => {
+            // println!("\x1b[93m[LOGGER][0] logging level {:?} is not supported. use default level: `INFO`\x1b[0m", level);
             LevelFilter::Info
         },
         None => {
-            println!("\x1b[93m[LOGGER][0] logging level is not specified. use default level: `INFO`\x1b[0m");
+            // println!("\x1b[93m[LOGGER][0] logging level is not specified. use default level: `INFO`\x1b[0m");
             LevelFilter::Info
         }, // default is INFO
     });

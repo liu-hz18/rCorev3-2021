@@ -58,6 +58,7 @@ $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
+	@cd ../user && make build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release
