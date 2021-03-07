@@ -53,7 +53,7 @@ pub fn rust_main() -> ! {
         boot_stack as usize, boot_stack_top as usize
     );
     info!(".bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
-    dbgx!(boot_stack_top as usize - boot_stack as usize);
+    // dbgx!(boot_stack_top as usize - boot_stack as usize);
 
     // print `Hello World` in different log level
     error!("Hello World!");

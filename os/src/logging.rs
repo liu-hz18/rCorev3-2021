@@ -20,16 +20,17 @@ pub fn init() {
         Some("INFO") => LevelFilter::Info,
         Some("DEBUG") => LevelFilter::Debug,
         Some("TRACE") => LevelFilter::Trace,
+        Some("OFF") => LevelFilter::Off,
         Some(level) => {
-            println!("\x1b[93m[WARN][0] logging level {:?} is not supported. use default level: `INFO`\x1b[0m", level);
-            LevelFilter::Info
-        }, // default is INFO
-        None => {
-            println!("\x1b[93m[WARN][0] logging level is not specified. use default level: `INFO`\x1b[0m");
+            println!("\x1b[93m[LOGGER][0] logging level {:?} is not supported. use default level: `INFO`\x1b[0m", level);
             LevelFilter::Info
         },
+        None => {
+            println!("\x1b[93m[LOGGER][0] logging level is not specified. use default level: `INFO`\x1b[0m");
+            LevelFilter::Info
+        }, // default is INFO
     });
-    println!("\x1b[34m[INFO][0] Logging Level: {:?}\x1b[0m", log::max_level());
+    // println!("\x1b[34m[INFO][0] Logging Level: {:?}\x1b[0m", log::max_level());
 }
 
 /// Add escape sequence to print with color in Linux console
