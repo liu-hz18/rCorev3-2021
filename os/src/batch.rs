@@ -2,7 +2,7 @@ use core::cell::RefCell;
 use lazy_static::*;
 use crate::trap::TrapContext;
 
-pub const USER_STACK_SIZE: usize = 4096 * 2; // 8KiB 栈
+pub const USER_STACK_SIZE: usize = 4096; // 8KiB 栈
 const KERNEL_STACK_SIZE: usize = 4096 * 2; // 8KiB 栈
 const MAX_APP_NUM: usize = 16;
 pub const APP_BASE_ADDRESS: usize = 0x80400000;
@@ -97,7 +97,9 @@ impl AppManagerInner {
 
     pub fn get_current_app(&self) -> usize { self.current_app }
 
-    pub fn get_current_app_runtime_end(&self) -> usize { APP_BASE_ADDRESS + self.app_start[self.current_app + 1] - self.app_start[self.current_app] }
+    pub fn get_current_app_runtime_end(&self) -> usize {
+        APP_BASE_ADDRESS + self.app_start[self.current_app] - self.app_start[self.current_app-1]
+    }
 
     pub fn move_to_next_app(&mut self) {
         self.current_app += 1;
@@ -129,7 +131,7 @@ lazy_static! {
 
 pub fn init() {
     // 打印 UserStack 和Kernel Stack 地址范围
-    // 8KiB 栈
+    // 4KiB 栈
     println!("[kernel] Kernel Stack [{:#x}, {:#x})", KERNEL_STACK.data.as_ptr() as usize, KERNEL_STACK.data.as_ptr() as usize + KERNEL_STACK_SIZE);
     println!("[kernel] User   Stack [{:#x}, {:#x})", USER_STACK.data.as_ptr() as usize, USER_STACK.data.as_ptr() as usize + USER_STACK_SIZE);
     // 调用 print_app_info 的时候第一次用到了全局变量 APP_MANAGER ，它也是在这个时候完成初始化
@@ -149,7 +151,7 @@ pub fn get_current_app() -> usize {
 }
 
 pub fn addr_in_user_stack(addr: usize) -> bool {
-    addr > USER_STACK.data.as_ptr() as usize && addr < USER_STACK.data.as_ptr() as usize + USER_STACK_SIZE
+    (addr >= USER_STACK.data.as_ptr() as usize) && (addr < USER_STACK.data.as_ptr() as usize + USER_STACK_SIZE)
 }
 
 // 批处理操作系统的核心操作，即加载并运行下一个应用程序
@@ -164,7 +166,7 @@ pub fn run_next_app() -> ! {
     unsafe {
         APP_MANAGER.inner.borrow().load_app(current_app);
     }
-    APP_MANAGER.inner.borrow_mut().move_to_next_app();
+    APP_MANAGER.inner.borrow_mut().move_to_next_app(); // load之后就+1了，说明current_app == 1 时正在运行 app_0
     extern "C" { fn __restore(cx_addr: usize); }
     unsafe {
         // 在内核栈上压入一个 Trap 上下文，其 sepc 是应用程序入口地址 0x80040000, 其 sp 寄存器指向用户栈

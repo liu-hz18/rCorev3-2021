@@ -3,7 +3,7 @@ use super::write;
 
 struct Stdout;
 
-const STDOUT: usize = 1;
+pub const STDOUT: usize = 1;
 
 // 基于 系统调用 write 的实现，且传入的 fd 参数设置为 1，它代表标准输出， 也就是输出到屏幕
 impl Write for Stdout {
