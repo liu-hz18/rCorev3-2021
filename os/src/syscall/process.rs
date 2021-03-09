@@ -1,9 +1,10 @@
 use crate::task::{
     suspend_current_and_run_next,
     exit_current_and_run_next,
-    current_task_id
+    current_task_id,
+    set_task_priority
 };
-use crate::timer::get_time_ms;
+use crate::timer::{get_time_sys, TimeVal};
 
 // 打印退出的应用程序的返回值并同样调用 run_next_app 切换到下一个应用程序
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -21,6 +22,10 @@ pub fn sys_yield() -> isize {
     0
 }
 
-pub fn sys_get_time() -> isize {
-    get_time_ms() as isize
+pub fn sys_get_time(ts: *mut TimeVal, tz: usize) -> isize {
+    get_time_sys(ts, tz) as isize
+}
+
+pub fn sys_set_priority(priority: isize) -> isize {
+    set_task_priority(priority)
 }

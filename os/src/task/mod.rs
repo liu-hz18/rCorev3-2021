@@ -4,12 +4,13 @@ mod context;
 mod switch;
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, TASK_INIT_PRIORITY, MAX_EXECUTE_TIME_MS};
 use crate::loader::{get_num_app, init_app_cx};
 use core::cell::RefCell;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
+use crate::timer::{get_time_ms};
 
 pub use context::TaskContext;
 
@@ -31,7 +32,14 @@ lazy_static! {
         let num_app = get_num_app();
         // 创建一个初始化的 tasks 数组，其中的每个任务控制块的运行状态都是 UnInit 代表尚未初始化
         let mut tasks = [
-            TaskControlBlock { task_cx_ptr: 0, task_status: TaskStatus::UnInit };
+            TaskControlBlock {
+                task_cx_ptr: 0,
+                task_status: TaskStatus::UnInit,
+                task_stride: 0,
+                task_priority: TASK_INIT_PRIORITY,
+                task_run_duration_ms: 0,
+                task_last_start_time: 0,
+            };
             MAX_APP_NUM
         ];
         // 依次对每个任务控制块进行初始化
@@ -57,6 +65,12 @@ impl TaskManager {
         self.inner.borrow_mut().current_task
     }
 
+    fn set_task_priority(&self, priority: isize) {
+        let mut inner = self.inner.borrow_mut();
+        let current = inner.current_task;
+        inner.tasks[current].task_priority = priority;
+    }
+
     fn run_first_task(&self) {
         // 最先执行的编号为 0 的应用的 task_cx_ptr2
         self.inner.borrow_mut().tasks[0].task_status = TaskStatus::Running;
@@ -75,7 +89,12 @@ impl TaskManager {
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.borrow_mut();
         let current = inner.current_task;
-        inner.tasks[current].task_status = TaskStatus::Ready;
+        if inner.tasks[current].task_run_duration_ms > MAX_EXECUTE_TIME_MS {
+            inner.tasks[current].task_status = TaskStatus::Exited;
+            println!("[kernel] Application {} killed by core due to execution duration > {}s.", current, MAX_EXECUTE_TIME_MS / 1000);
+        } else {
+            inner.tasks[current].task_status = TaskStatus::Ready;
+        }
     }
 
     fn mark_current_exited(&self) {
@@ -84,24 +103,44 @@ impl TaskManager {
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
+    // 实际上实现了 时间片轮转算法 Round-Robin (RR), 也就是 循环队列
+    #[allow(dead_code)]
     fn find_next_task(&self) -> Option<usize> {
         let inner = self.inner.borrow();
         let current = inner.current_task;
-        // 循环一圈，找到 current_task 后面第一个状态为 Ready 的应用
-        // [current + 1, current + self.num_app + 1) % self.num_app
+        // [current + 1, current + self.num_app + 1) % self.num_app, O(n)
         (current + 1..current + self.num_app + 1)
             .map(|id| id % self.num_app)
             .find(|id| {
                 inner.tasks[*id].task_status == TaskStatus::Ready
             })
+        
+    }
+
+    // 实现带优先级的调度算法: stride 调度算法
+    fn find_next_task_stride(&self) -> Option<usize> {
+        let inner = self.inner.borrow();
+        let current = inner.current_task;
+        // 循环一圈，从当前 Ready 态的进程中选择 stride 最小的进程调度
+        let mut min_task_id: Option<usize> = None;
+        let mut min_task_stride: isize = isize::MAX;
+        // [current + 1, current + self.num_app + 1) % self.num_app, O(n)
+        for id in (current + 1)..(current + self.num_app + 1) {
+            if inner.tasks[id % self.num_app].task_status == TaskStatus::Ready && inner.tasks[id % self.num_app].task_stride < min_task_stride {
+                min_task_id = Some(id % self.num_app);
+                min_task_stride = inner.tasks[id % self.num_app].task_stride
+            }
+        }
+        min_task_id
     }
 
     fn run_next_task(&self) {
         // 寻找一个运行状态为 Ready 的应用并返回其 ID, 返回的类型是 Option<usize>
-        if let Some(next) = self.find_next_task() {
+        if let Some(next) = self.find_next_task_stride() {
             let mut inner = self.inner.borrow_mut();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].task_stride += inner.tasks[next].get_task_pass();
             inner.current_task = next;
             // 拿到当前应用 current 和即将被切换到的应用 next 的 task_cx_ptr2 
             let current_task_cx_ptr2 = inner.tasks[current].get_task_cx_ptr2();
@@ -109,6 +148,9 @@ impl TaskManager {
             // 一般情况下它是在 函数退出之后才会被自动释放
             // 从而 TASK_MANAGER 的 inner 字段得以回归到未被借用的状态，之后可以再 借用
             // 如果不手动 drop 的话，编译器会在 __switch 返回，也就是当前应用被切换回来的时候才 drop，这期间我们 都不能修改 TaskManagerInner ，甚至不能读（因为之前是可变借用）
+            inner.tasks[current].task_run_duration_ms += get_time_ms() - inner.tasks[current].task_last_start_time;
+            inner.tasks[next].task_last_start_time = get_time_ms();
+            // println!("[kernel] switch out task {}, time-elasped {}", current, inner.tasks[current].task_run_duration_ms);
             core::mem::drop(inner);
             // 调用 __switch 接口进行切换
             unsafe {
@@ -153,4 +195,13 @@ pub fn exit_current_and_run_next() {
 
 pub fn current_task_id() -> usize {
     TASK_MANAGER.current_task_id()
+}
+
+pub fn set_task_priority(priority: isize) -> isize {
+    if priority >= 2 && priority <= isize::MAX {
+        TASK_MANAGER.set_task_priority(priority);
+        priority
+    } else {
+        -1
+    }
 }

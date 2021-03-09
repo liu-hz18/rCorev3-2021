@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(llvm_asm)]
 #![feature(linkage)]
+#![allow(dead_code)]
 #![feature(panic_info_message)]
 
 #[macro_use]
@@ -33,8 +34,38 @@ fn clear_bss() {
 }
 
 use syscall::*;
+pub use console::STDOUT;
+
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct TimeVal {
+    pub sec: usize,
+    pub usec: usize,
+}
+
+impl TimeVal {
+    pub fn new() -> Self {
+        TimeVal { sec: 0, usec: 0 }
+    }
+}
 
 pub fn write(fd: usize, buf: &[u8]) -> isize { sys_write(fd, buf) }
 pub fn exit(exit_code: i32) -> isize { sys_exit(exit_code) }
 pub fn yield_() -> isize { sys_yield() }
-pub fn get_time() -> isize { sys_get_time() }
+pub fn get_time() -> isize {
+    let time = TimeVal::new();
+    match sys_get_time(&time, 0) {
+        0 => ((time.sec & 0xffff) * 1000 + time.usec / 1000) as isize,
+        _ => -1,
+    }
+}
+pub fn set_priority(prio: isize) -> isize {
+    sys_set_priority(prio)
+}
+pub fn sleep(period_ms: usize) {
+    let start = get_time();
+    while get_time() < start + period_ms as isize {
+        sys_yield();
+    }
+}

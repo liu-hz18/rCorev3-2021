@@ -38,6 +38,9 @@ READOBJ := rust-readobj -all
 # addr2line 的默认 addr
 ADDR := 0x8002000c
 
+
+TEST := ch3_0
+
 # Disassembly
 DISASM ?= -x -D
 
@@ -58,7 +61,7 @@ $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
-	@cd ../user && make build
+	@cd ../user && make $(TEST)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release

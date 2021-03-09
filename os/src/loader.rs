@@ -23,6 +23,10 @@ static USER_STACK: [UserStack; MAX_APP_NUM] = [
     MAX_APP_NUM
 ];
 
+
+static mut APP_DATA_SEGMENTS_BEGIN: [usize; MAX_APP_NUM] = [0; MAX_APP_NUM];
+static mut APP_DATA_SEGMENTS_END: [usize; MAX_APP_NUM] = [0; MAX_APP_NUM];
+
 impl KernelStack {
     fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + KERNEL_STACK_SIZE
@@ -62,7 +66,11 @@ pub fn get_num_app() -> usize {
 pub fn load_apps() {
     extern "C" { fn _num_app(); }
     let num_app_ptr = _num_app as usize as *const usize;
-    let num_app = get_num_app();
+    let mut num_app = get_num_app();
+    if num_app > MAX_APP_NUM {
+        println!("[kernel] WARN: num_app={} out of MAX_APP_NUM={}, clip `num_app` to MAX_APP_NUM", num_app, MAX_APP_NUM);
+        num_app = MAX_APP_NUM;
+    }
     let app_start = unsafe {
         core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1)
     };
@@ -84,7 +92,11 @@ pub fn load_apps() {
             core::slice::from_raw_parts_mut(base_i as *mut u8, src.len())
         };
         dst.copy_from_slice(src);
-        println!("[kernel] app_{} mem: [{:#x}, {:#x}) -> [{:#x}, {:#x})", i, app_start[i], app_start[i+1], base_i, base_i + src.len());
+        unsafe {
+            APP_DATA_SEGMENTS_BEGIN[i] = base_i;
+            APP_DATA_SEGMENTS_END[i] = base_i + src.len();
+            println!("[kernel] app_{} mem: [{:#x}, {:#x}) -> [{:#x}, {:#x})", i, app_start[i], app_start[i+1], APP_DATA_SEGMENTS_BEGIN[i], APP_DATA_SEGMENTS_END[i]);
+        }
         println!("               kernel stack: [{:#x}, {:#x})", KERNEL_STACK[i].data.as_ptr() as usize, KERNEL_STACK[i].data.as_ptr() as usize + KERNEL_STACK_SIZE);
         println!("               user stack:   [{:#x}, {:#x})", USER_STACK[i].data.as_ptr() as usize, USER_STACK[i].data.as_ptr() as usize + USER_STACK_SIZE);
     }
@@ -95,4 +107,14 @@ pub fn init_app_cx(app_id: usize) -> &'static TaskContext {
         TrapContext::app_init_context(get_base_i(app_id), USER_STACK[app_id].get_sp()),
         TaskContext::goto_restore(), // 构造 任务上下文
     )
+}
+
+pub fn in_app_user_stack(task_id: usize, addr: usize) -> bool {
+    (addr >= USER_STACK[task_id].data.as_ptr() as usize) && (addr < USER_STACK[task_id].data.as_ptr() as usize + USER_STACK_SIZE)
+}
+
+pub fn in_app_data_section(task_id: usize, addr: usize) -> bool {
+    unsafe{ 
+        (addr >= APP_DATA_SEGMENTS_BEGIN[task_id]) && (addr < APP_DATA_SEGMENTS_END[task_id])
+    }
 }

@@ -16,6 +16,7 @@ use crate::syscall::syscall;
 use crate::task::{
     exit_current_and_run_next,
     suspend_current_and_run_next,
+    current_task_id
 };
 use crate::timer::set_next_trigger;
 
@@ -49,12 +50,12 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
-            println!("[kernel] PageFault in application, core dumped.");
+            println!("[kernel] PageFault in application {}(killed), core dumped.", current_task_id());
             // 直接切换并运行下一个 应用程序
             exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
-            println!("[kernel] IllegalInstruction in application, core dumped.");
+            println!("[kernel] IllegalInstruction in application {}(killed), core dumped.", current_task_id());
             exit_current_and_run_next();
         },
         // 抢占式调度
@@ -64,7 +65,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             suspend_current_and_run_next(); // 暂停当前应用并切换到下一个
         },
         _ => {
-            panic!("Unsupported trap {:?}, stval = {:#x}!", scause.cause(), stval);
+            panic!("Unsupported trap {:?}, stval = {:#x}!, app_id = {}(killed)", scause.cause(), stval, current_task_id());
         }
     }
     cx // 将传入的 cx 原样返回
