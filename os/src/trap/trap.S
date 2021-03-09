@@ -52,8 +52,11 @@ __alltraps:
 __restore:
     # case1: start running app by __restore
     # case2: back to U after handling trap
+    
     # a0 在调用 trap_handler 前后并没有发生变化，仍然指向分配 Trap 上下文之后的内核栈栈顶，和此时 sp 的值相同
-    mv sp, a0
+    # 在 __switch 之后， sp 就已经正确指向了我们需要的 Trap 上下文地址, 不需要下面这条指令了
+    # mv sp, a0 
+
     # 此时 sp 仍然指向内核栈的栈顶
     # now sp->kernel stack(after allocated), sscratch->user stack
     

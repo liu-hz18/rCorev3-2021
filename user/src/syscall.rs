@@ -1,5 +1,7 @@
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
+const SYSCALL_YIELD: usize = 124;
+const SYSCALL_GET_TIME: usize = 169;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize; // 变量 ret 必须为可变 绑定，否则无法通过编译, 这也说明在 unsafe 块内编译器还是会进行力所能及的安全检查。
@@ -35,4 +37,18 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
 /// syscall ID：93
 pub fn sys_exit(exit_code: i32) -> isize {
     syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0])
+}
+
+/// 功能：应用主动交出 CPU 所有权并切换到其他应用。
+/// 返回值：总是返回 0。
+/// syscall ID：124
+pub fn sys_yield() -> isize {
+    syscall(SYSCALL_YIELD, [0, 0, 0])
+}
+
+/// 功能：获取当前的时间，以毫秒为单位。
+/// 返回值：返回当前的时间，以毫秒为单位。
+/// syscall ID：169
+pub fn sys_get_time() -> isize {
+    syscall(SYSCALL_GET_TIME, [0, 0, 0])
 }

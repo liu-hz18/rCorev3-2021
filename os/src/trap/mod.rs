@@ -7,13 +7,24 @@ use riscv::register::{
         self,
         Trap,
         Exception,
+        Interrupt,
     },
     stval,
+    sie,
 };
 use crate::syscall::syscall;
-use crate::batch::run_next_app;
+use crate::task::{
+    exit_current_and_run_next,
+    suspend_current_and_run_next,
+};
+use crate::timer::set_next_trigger;
 
 global_asm!(include_str!("trap.S"));
+
+// 设置了 sie.stie 使得 S 特权级时钟中断不会被屏蔽
+pub fn enable_timer_interrupt() {
+    unsafe { sie::set_stimer(); }
+}
 
 pub fn init() {
     extern "C" { fn __alltraps(); }
@@ -40,12 +51,18 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         Trap::Exception(Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, core dumped.");
             // 直接切换并运行下一个 应用程序
-            run_next_app();
+            exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, core dumped.");
-            run_next_app();
-        }
+            exit_current_and_run_next();
+        },
+        // 抢占式调度
+        // 中断不会被屏蔽，而是 Trap 到 S 特权级内的我们的 trap_handler 里面进行处理，并顺利切换到下一个应用
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_trigger(); // 重新设置一个 10ms 的计时器
+            suspend_current_and_run_next(); // 暂停当前应用并切换到下一个
+        },
         _ => {
             panic!("Unsupported trap {:?}, stval = {:#x}!", scause.cause(), stval);
         }

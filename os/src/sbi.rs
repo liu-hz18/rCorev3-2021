@@ -33,6 +33,10 @@ pub fn console_getchar() -> usize {
     sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0)
 }
 
+pub fn set_timer(timer: usize) {
+    sbi_call(SBI_SET_TIMER, timer, 0, 0);
+}
+
 // 目前的执行环境还缺了一个退出机制, 不然会跑飞
 // OS/RustSBI会提供一个退出的系统调用服务接口，当 应用程序/OS 调用这个接口，那这个程序就退出了
 // 这里

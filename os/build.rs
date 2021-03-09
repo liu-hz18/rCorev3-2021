@@ -24,7 +24,7 @@ fn insert_app_data() -> Result<()> {
 
     writeln!(f, r#"
     # created by script build.rs
-    .align 3
+    .align 4
     .section .data
     .global _num_app
 _num_app:
