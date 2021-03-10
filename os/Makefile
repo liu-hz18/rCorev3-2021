@@ -39,7 +39,7 @@ READOBJ := rust-readobj -all
 ADDR := 0x8002000c
 
 
-TEST := ch3_0
+TEST := ch4
 
 # Disassembly
 DISASM ?= -x -D

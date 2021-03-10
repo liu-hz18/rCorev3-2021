@@ -2,7 +2,7 @@ use crate::task::{
     suspend_current_and_run_next,
     exit_current_and_run_next,
     current_task_id,
-    set_task_priority
+    set_task_priority,
 };
 use crate::timer::{get_time_sys, TimeVal};
 

@@ -17,6 +17,10 @@ SECTIONS
     */
     .text : {
         *(.text.entry)
+        . = ALIGN(4K);
+        strampoline = .;
+        *(.text.trampoline);
+        . = ALIGN(4K);
         *(.text .text.*)
     }
 
@@ -38,7 +42,7 @@ SECTIONS
 
     . = ALIGN(4K);
     edata = .;
-
+    sbss_with_stack = .;
     .bss : {
         /* entry.asm 中分配的栈空间对应的段 .bss.stack 被放入到可执行文件中的 .bss 段中的低地址中 */
         *(.bss.stack)
@@ -50,6 +54,7 @@ SECTIONS
     ebss = .; /* 注意: 地址区间 [sbss,ebss) 并不包括栈空间 */
 
     ekernel = .;
+    /* 内核数据的终止物理地址，在它之后的物理内存都是可用的 */
 
     /DISCARD/ : {
         *(.eh_frame)

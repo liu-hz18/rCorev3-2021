@@ -1,4 +1,11 @@
 # Trap 上下文保存/恢复的汇编代码
+# 这段汇编代码放在一个物理页帧中
+# __alltraps 恰好位于这个物理页帧的开头，其物理地址被外部符号 strampoline 标记
+# 这段汇编代码 被放在它们地址空间的最高页面上
+# 由于这段汇编代码在执行的时候涉及到地址空间切换，故而被称为跳板页面
+# 注意无论是内核还是应用的地址空间，跳板页面均位于同样位置，且它们也将会映射到同一个实际存放这段 汇编代码的物理页帧
+# 也就是说，无论在执行 __alltraps 还是 __restore 切换地址空间的时候，两个地址空间 在切换地址空间的指令附近的映射方式均是相同的，这就说明了指令仍是连续执行的
+
 .altmacro
 .macro SAVE_GP n
     sd x\n, \n*8(sp)
@@ -6,21 +13,22 @@
 .macro LOAD_GP n
     ld x\n, \n*8(sp)
 .endm
-    .section .text
+    .section .text.trampoline # 在调整内存布局的时候将它对齐到代码段的一个页面中
     .globl __alltraps
     .globl __restore
     .align 2
 
 # 将 Trap 上下文保存在内核栈上
 __alltraps:
-    # 在这一行之前 sp 指向用户栈， sscratch 指向内核栈
+    # 当 __alltraps 保存 Trap 上下文的时候，我们必须通过修改 satp 从应用地址空间切换到内核地址空间， 因为 trap handler 只有在内核地址空间中才能访问
+    # 在这一行之前 sp 指向用户栈， sscratch 指向sscratch 则被设置为 指向应用地址空间中存放 Trap 上下文的位置，实际在次高页面
+    
     # 交换 sscratch 和 sp 
     csrrw sp, sscratch, sp
-    # 现在 sp 指向内核栈， sscratch 指向用户栈
-    # now sp->kernel stack, sscratch->user stack
+    # 现在 sp 指向 *TrapContext in user space, sscratch 指向用户栈
     
     # allocate a TrapContext on kernel stack
-    addi sp, sp, -34*8
+    # addi sp, sp, -34*8
     # save general-purpose registers
     sd x1, 1*8(sp)
     # skip sp(x2), we will save it later
@@ -32,6 +40,7 @@ __alltraps:
         SAVE_GP %n
         .set n, n+1
     .endr
+
     # we can use t0/t1/t2 freely, because they were saved on kernel stack
     # 将 CSR sstatus 和 sepc 的值分别读到寄存器 t0 和 t1 中然后保存到内核栈对应的位置上
     csrr t0, sstatus
@@ -42,13 +51,28 @@ __alltraps:
     # 首先将 sscratch 的值读到寄存器 t2 并保存到内核栈上，注意它里面是进入 Trap 之前的 sp 的值，指向 用户栈
     csrr t2, sscratch
     sd t2, 2*8(sp)
+    # 至此，在内核地址空间中完成了 向应用地址空间的次高页面 保存 Trap 上下文的工作
 
-    # set input argument of trap_handler(cx: &mut TrapContext)
-    mv a0, sp
-    # 让寄存器 a0 指向内核栈的栈指针也就是我们刚刚保存的 Trap 上下文的地址， 这是由于我们接下来要调用 trap_handler 进行 Trap 处理，它的第一个参数 cx 由调用规范要从 a0 中获取
-    call trap_handler # 跳转到使用 Rust 编写的 trap_handler 函数 完成 Trap 分发及处理
+    # load kernel_satp into t0，将内核地址空间的 token 载入到 t0 寄存器中
+    ld t0, 34*8(sp)
+    # load trap_handler into t1， 将 trap handler 入口点的虚拟地址载入到 t1 寄存器中
+    ld t1, 36*8(sp)
+    # move to kernel_sp，将 sp 修改为应用内核栈顶的地址
+    ld sp, 35*8(sp)
+    # switch to kernel space， 将 satp 修改为内核地址空间的 token 并使用 sfence.vma 刷新快表
+    csrw satp, t0
+    sfence.vma
+    # 至此，切换到了内核地址空间
+    # jump to trap_handler (t1)
+    jr t1 # 跳转到使用 Rust 编写的 trap_handler 函数 完成 Trap 分发及处理
+    # 跳转指令实际被执行时的虚拟地址 和 在编译器进行链接时看到的它的地址不同
 
 # 从保存在内核栈上的 Trap 上下文恢复寄存器
+# 在 __restore 恢复 Trap 上下文的时候，我们也必须从内核地址空间切换回应用地址空间，因为应用的代码和 数据只能在它自己的地址空间中才能访问
+# 这就要求应用和内核地址空间在切换地址空间指令附近是平滑的
+# 两个参数：
+#   a0: Trap 上下文在应用 地址空间中的位置， 这个对于所有的应用来说都是相同的
+#   a1: 即将回到的应用的地址空间 的 token 
 __restore:
     # case1: start running app by __restore
     # case2: back to U after handling trap
@@ -60,15 +84,25 @@ __restore:
     # 此时 sp 仍然指向内核栈的栈顶
     # now sp->kernel stack(after allocated), sscratch->user stack
     
+    # a0: *TrapContext in user space(Constant); a1: user space token
+    # switch to user space
+    # 先切换回应用地址空间
+    csrw satp, a1
+    sfence.vma
+
+    # 将传入的 Trap 上下文位置保存在 sscratch 寄存器中，这样 __alltraps 中才能基于它将 Trap 上下文 保存到正确的位置
+    csrw sscratch, a0
+    # 将 sp 修改为 Trap 上下文的位置，后面基于它恢复各通用寄存器和 CSR
+    mv sp, a0
+    # now sp points to TrapContext in user space, start restoring based on it
+
     # 从内核栈顶的 Trap 上下文恢复通用寄存器和 CSR
     # restore sstatus/sepc
     # 先恢复 CSR 再恢复通用寄存器，这样我们使用的三个临时寄存器 才能被正确恢复
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
-    ld t2, 2*8(sp)
     csrw sstatus, t0
     csrw sepc, t1
-    csrw sscratch, t2
     # restore general-purpuse registers except sp/tp
     ld x1, 1*8(sp)
     ld x3, 3*8(sp)
@@ -77,10 +111,6 @@ __restore:
         LOAD_GP %n
         .set n, n+1
     .endr
-    # 此时 sp 指向保存了 Trap 上下文之后的内核栈栈顶， sscratch 指向用户栈栈顶
-    # release TrapContext on kernel stack
-    addi sp, sp, 34*8
-    # now sp->kernel stack, sscratch->user stack
-    # 交换 sscratch 和 sp，现在 sp 重新指向用户栈栈顶，sscratch 也依然保存 进入 Trap 之前的状态并指向内核栈栈顶
-    csrrw sp, sscratch, sp
-    sret # 通过一条 sret 指令回到U-mode 应用程序执行
+    # back to user stack
+    ld sp, 2*8(sp)
+    sret  # 通过一条 sret 指令回到U-mode 应用程序执行

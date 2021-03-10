@@ -1,16 +1,16 @@
 // 操作系统的核心机制 —— 任务切换
-
 mod context;
 mod switch;
 mod task;
 
-use crate::config::{MAX_APP_NUM, TASK_INIT_PRIORITY, MAX_EXECUTE_TIME_MS};
-use crate::loader::{get_num_app, init_app_cx};
+use crate::loader::{get_num_app, get_app_data};
+use crate::trap::TrapContext;
 use core::cell::RefCell;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
-use crate::timer::{get_time_ms};
+// use crate::timer::{get_time_ms};
+use alloc::vec::Vec;
 
 pub use context::TaskContext;
 
@@ -21,7 +21,7 @@ pub struct TaskManager {
 }
 
 struct TaskManagerInner {
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     current_task: usize,
 }
 
@@ -29,32 +29,21 @@ unsafe impl Sync for TaskManager {}
 
 lazy_static! {
     pub static ref TASK_MANAGER: TaskManager = {
+        println!("init TASK_MANAGER");
         let num_app = get_num_app();
-        // 创建一个初始化的 tasks 数组，其中的每个任务控制块的运行状态都是 UnInit 代表尚未初始化
-        let mut tasks = [
-            TaskControlBlock {
-                task_cx_ptr: 0,
-                task_status: TaskStatus::UnInit,
-                task_stride: 0,
-                task_priority: TASK_INIT_PRIORITY,
-                task_run_duration_ms: 0,
-                task_last_start_time: 0,
-            };
-            MAX_APP_NUM
-        ];
-        // 依次对每个任务控制块进行初始化
+        println!("num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
-            // 在它的内核栈栈顶压入一些初始化 的上下文
-            // 保证应用在第一次执行的时候，内核栈就有 Task 上下文
-            // 然后更新它的 task_cx_ptr
-            tasks[i].task_cx_ptr = init_app_cx(i) as * const _ as usize;
-            tasks[i].task_status = TaskStatus::Ready; // 运行状态设置为 Ready
+            tasks.push(TaskControlBlock::new(
+                get_app_data(i),
+                i,
+            ));
         }
         TaskManager {
             num_app,
             inner: RefCell::new(TaskManagerInner {
                 tasks,
-                current_task: 0,
+                current_task: 0, // 将 current_task 设置 为 0 ，于是将从第 0 个应用开始执行
             }),
         }
     };
@@ -89,12 +78,7 @@ impl TaskManager {
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.borrow_mut();
         let current = inner.current_task;
-        if inner.tasks[current].task_run_duration_ms > MAX_EXECUTE_TIME_MS {
-            inner.tasks[current].task_status = TaskStatus::Exited;
-            println!("[kernel] Application {} killed by core due to execution duration > {}s.", current, MAX_EXECUTE_TIME_MS / 1000);
-        } else {
-            inner.tasks[current].task_status = TaskStatus::Ready;
-        }
+        inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
     fn mark_current_exited(&self) {
@@ -134,6 +118,20 @@ impl TaskManager {
         min_task_id
     }
 
+    // 当前正在执行的应用的地址空间的 token 
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.borrow();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
+    }
+
+    // 可以在 内核地址空间中 修改位于 该应用地址空间中 的 Trap 上下文 的可变引用
+    fn get_current_trap_cx(&self) -> &mut TrapContext {
+        let inner = self.inner.borrow();
+        let current = inner.current_task;
+        inner.tasks[current].get_trap_cx()
+    }
+
     fn run_next_task(&self) {
         // 寻找一个运行状态为 Ready 的应用并返回其 ID, 返回的类型是 Option<usize>
         if let Some(next) = self.find_next_task_stride() {
@@ -148,8 +146,8 @@ impl TaskManager {
             // 一般情况下它是在 函数退出之后才会被自动释放
             // 从而 TASK_MANAGER 的 inner 字段得以回归到未被借用的状态，之后可以再 借用
             // 如果不手动 drop 的话，编译器会在 __switch 返回，也就是当前应用被切换回来的时候才 drop，这期间我们 都不能修改 TaskManagerInner ，甚至不能读（因为之前是可变借用）
-            inner.tasks[current].task_run_duration_ms += get_time_ms() - inner.tasks[current].task_last_start_time;
-            inner.tasks[next].task_last_start_time = get_time_ms();
+            // inner.tasks[current].task_run_duration_ms += get_time_ms() - inner.tasks[current].task_last_start_time;
+            // inner.tasks[next].task_last_start_time = get_time_ms();
             // println!("[kernel] switch out task {}, time-elasped {}", current, inner.tasks[current].task_run_duration_ms);
             core::mem::drop(inner);
             // 调用 __switch 接口进行切换
@@ -193,10 +191,6 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
-pub fn current_task_id() -> usize {
-    TASK_MANAGER.current_task_id()
-}
-
 pub fn set_task_priority(priority: isize) -> isize {
     if priority >= 2 && priority <= isize::MAX {
         TASK_MANAGER.set_task_priority(priority);
@@ -204,4 +198,16 @@ pub fn set_task_priority(priority: isize) -> isize {
     } else {
         -1
     }
+}
+
+pub fn current_task_id() -> usize {
+    TASK_MANAGER.current_task_id()
+}
+
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
 }

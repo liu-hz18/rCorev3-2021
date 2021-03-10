@@ -2,6 +2,8 @@
 use riscv::register::time;
 use crate::sbi::set_timer; // 由 SEE 提供的标准 SBI 接口函数，它可以用来设置 mtimecmp 的值
 use crate::config::CLOCK_FREQ;
+use crate::mm::translated_virtual_ptr;
+use crate::task::current_user_token;
 
 const TICKS_PER_SEC: usize = 100;
 const MSEC_PER_SEC: usize = 1000;
@@ -34,9 +36,11 @@ pub fn get_time_us() -> usize {
 // 正确返回 0，错误返回 -1
 pub fn get_time_sys(ts: *mut TimeVal, _tz: usize) -> isize {
     unsafe {
-        if let Some(ts) = ts.as_mut() {
-            (*ts).usec = get_time_us() % USEC_PER_SEC;
-            (*ts).sec = get_time_us() / USEC_PER_SEC;
+        let pa_ts = translated_virtual_ptr(current_user_token(), ts);
+        // println!("in get_time_sys(), va={:#x}, pa={:#x}", ts as usize, pa_ts as usize);
+        if let Some(pa_ts) = pa_ts.as_mut() {
+            (*pa_ts).usec = get_time_us() % USEC_PER_SEC;
+            (*pa_ts).sec = get_time_us() / USEC_PER_SEC;
             return 0
         }
     }

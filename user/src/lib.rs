@@ -12,7 +12,7 @@ mod lang_items;
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
-    clear_bss();
+    // clear_bss();
     exit(main()); // 使用它退出应用程序并将返回值告知 底层的批处理系统
     panic!("unreachable after sys_exit!");
 }
@@ -23,15 +23,15 @@ fn main() -> i32 {
     panic!("Cannot find main!");
 }
 
-fn clear_bss() {
-    extern "C" {
-        fn start_bss();
-        fn end_bss();
-    }
-    (start_bss as usize..end_bss as usize).for_each(|addr| {
-        unsafe { (addr as *mut u8).write_volatile(0); }
-    });
-}
+// fn clear_bss() {
+//     extern "C" {
+//         fn start_bss();
+//         fn end_bss();
+//     }
+//     (start_bss as usize..end_bss as usize).for_each(|addr| {
+//         unsafe { (addr as *mut u8).write_volatile(0); }
+//     });
+// }
 
 use syscall::*;
 pub use console::STDOUT;
