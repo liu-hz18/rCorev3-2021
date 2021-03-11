@@ -50,8 +50,8 @@ impl StrideTaskManager {
 }
 
 lazy_static! {
-    pub static ref TASK_MANAGER: Mutex<StrideTaskManager> = Mutex::new(StrideTaskManager::new());
-    // pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
+    // pub static ref TASK_MANAGER: Mutex<StrideTaskManager> = Mutex::new(StrideTaskManager::new());
+    pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
 }
 
 pub fn add_task(task: Arc<TaskControlBlock>) {
@@ -60,4 +60,8 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
 
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.lock().fetch()
+}
+
+pub fn running_task_num() -> usize {
+    TASK_MANAGER.lock().running_num()
 }

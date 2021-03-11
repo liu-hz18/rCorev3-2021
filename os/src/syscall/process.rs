@@ -157,21 +157,23 @@ pub fn sys_waitpid_blocking(
 ) -> isize {
     let task = current_task().unwrap();
     // find a child process
-
     // ---- hold current PCB lock
-    let mut inner = task.acquire_inner_lock();
-    // 可能的错误:
-    //  1. 进程无未结束子进程
-    //  2. pid 非法或者指定的不是该进程的子进程。
-    //  3. 传入的地址 status 不为 0 但是不合法
-    if inner.children
-        .iter()
-        .find(|p| {pid == -1 || pid == 0 || pid as usize == p.getpid()})
-        .is_none() {
-        return -1;
-        // ---- release current PCB lock
+    {
+        let mut inner = task.acquire_inner_lock();
+        // 可能的错误:
+        //  1. 进程无未结束子进程
+        //  2. pid 非法或者指定的不是该进程的子进程。
+        //  3. 传入的地址 status 不为 0 但是不合法
+        if inner.children
+            .iter()
+            .find(|p| {pid == -1 || pid == 0 || pid as usize == p.getpid()})
+            .is_none() {
+            return -1;
+            // ---- release current PCB lock
+        }
     }
     loop {
+        let mut inner = task.acquire_inner_lock();
         let pair = inner.children
             .iter()
             .enumerate()
@@ -191,9 +193,12 @@ pub fn sys_waitpid_blocking(
             // 判断 exit_code_ptr 是否合法
 
             *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+            drop(inner);
             return found_pid as isize;
         } else {
-            // ERROR!!!! 阻塞方式如何实现? 需要挂起当前线程然后轮询?
+            // 阻塞方式实现
+            drop(inner); // 注意释放互斥锁
+            suspend_current_and_run_next();
             continue;
         }
     }

@@ -25,7 +25,7 @@ pub use processor::{
     schedule,
     set_task_priority,
 };
-pub use manager::add_task;
+pub use manager::{add_task, running_task_num};
 pub use pid::{PidHandle, pid_alloc, KernelStack};
 
 pub fn suspend_current_and_run_next() {
@@ -39,7 +39,6 @@ pub fn suspend_current_and_run_next() {
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
     // ---- release current PCB lock
-
     // push back to ready queue.
     add_task(task);
     // jump to scheduling cycle
@@ -116,6 +115,7 @@ pub fn map_virtual_pages(addr: usize, len: usize, port: usize) -> isize {
     let va_end: VirtAddr = vpn_range.get_end().into();
     // TODO: 处理物理内存不足的错误, 目前直接panic
     inner.memory_set.push(map_area, None);
+    drop(inner);
     (va_end.0 - va_start.0) as isize
 }
 
@@ -141,6 +141,7 @@ pub fn unmap_virtual_pages(addr: usize, len: usize) -> isize {
     }
     // unmap 对应的映射
     inner.memory_set.unmap(vpn_range);
+    drop(inner);
     (va_end.0 - va_start.0) as isize
 }
 

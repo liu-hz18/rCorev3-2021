@@ -38,6 +38,7 @@ pub fn main() -> i32 {
                     let mut exit_pid: isize;
                     loop {
                         exit_pid = waitpid(cpid as usize, &mut xstate);
+                        println!("exit_pid: {}", exit_pid);
                         if exit_pid == -1 {
                             yield_();
                         } else {

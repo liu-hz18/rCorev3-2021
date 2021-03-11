@@ -2,7 +2,7 @@ use super::TaskControlBlock;
 use alloc::sync::Arc;
 use core::cell::RefCell;
 use lazy_static::*;
-use super::{fetch_task, TaskStatus};
+use super::{fetch_task, TaskStatus, running_task_num};
 use super::__switch;
 use crate::trap::TrapContext;
 use crate::config::{BIG_STRIDE};
@@ -49,6 +49,8 @@ impl Processor {
                         next_task_cx_ptr2,
                     );
                 }
+            } else {
+                panic!("[kernel] No more tasks. Shutting Down!");
             }
         }
     }
@@ -96,7 +98,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 }
 
 pub fn schedule(switched_task_cx_ptr2: *const usize) {
-    let idle_task_cx_ptr2 = PROCESSOR.get_idle_task_cx_ptr2();
+    let mut idle_task_cx_ptr2 = PROCESSOR.get_idle_task_cx_ptr2();
     unsafe {
         __switch(
             switched_task_cx_ptr2,
