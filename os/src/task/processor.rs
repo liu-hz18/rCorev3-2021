@@ -5,7 +5,7 @@ use lazy_static::*;
 use super::{fetch_task, TaskStatus};
 use super::__switch;
 use crate::trap::TrapContext;
-use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY};
+use crate::config::{BIG_STRIDE};
 
 pub struct Processor {
     inner: RefCell<ProcessorInner>,
@@ -68,6 +68,7 @@ pub fn run_tasks() {
     PROCESSOR.run();
 }
 
+// 注意: 这个函数和 current_task() 不同，这个函数会清除 PROCESSOR 里的 TaskControlBlock
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
     PROCESSOR.take_current()
 }

@@ -11,6 +11,8 @@ use task::{TaskControlBlock, TaskStatus};
 use alloc::sync::Arc;
 use manager::fetch_task;
 use lazy_static::*;
+use crate::mm::{MapPermission, MapType, MapArea, VPNRange, VirtAddr};
+use crate::config::PAGE_SIZE;
 
 pub use context::TaskContext;
 pub use processor::{
@@ -85,4 +87,67 @@ lazy_static! {
 
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+pub fn map_virtual_pages(addr: usize, len: usize, port: usize) -> isize {
+    // addr 按页 (4096 Byte) 对齐, len \in [0, 1GB = 0x4000_0000) 
+    // port 其余位必须为0, port & 0x7 = 0
+    if addr & (PAGE_SIZE-1) != 0 || len > 0x4000_0000 || (port & !0x7) != 0 || port & 0x7 == 0 { 
+        return -1;
+    }
+    if len == 0 { return 0; }
+    let task = current_task().unwrap();
+    let mut inner = task.acquire_inner_lock();
+    let map_perm = port_to_permission(port);
+    let map_area: MapArea = MapArea::new(
+        addr.into(),
+        (addr+len).into(),
+        MapType::Framed,
+        map_perm
+    );
+    let vpn_range: VPNRange = map_area.vpn_range;
+    // 处理 虚拟地址区间 [addr, addr+len) 存在已经被映射的页的错误
+    for vpn in vpn_range {
+        if inner.memory_set.have_mapped(&vpn) {
+            return -1;
+        }
+    }
+    let va_start: VirtAddr = vpn_range.get_start().into();
+    let va_end: VirtAddr = vpn_range.get_end().into();
+    // TODO: 处理物理内存不足的错误, 目前直接panic
+    inner.memory_set.push(map_area, None);
+    (va_end.0 - va_start.0) as isize
+}
+
+pub fn unmap_virtual_pages(addr: usize, len: usize) -> isize {
+    if addr & (PAGE_SIZE-1) != 0 || len > 0x4000_0000 { 
+        return -1;
+    }
+    if len == 0 { return 0; }
+    let task = current_task().unwrap();
+    let mut inner = task.acquire_inner_lock();
+
+    let start_va: VirtAddr = addr.into();
+    let end_va: VirtAddr = (addr+len).into();
+    let vpn_range: VPNRange = VPNRange::new(start_va.floor(), end_va.ceil());
+    let va_start: VirtAddr = vpn_range.get_start().into();
+    let va_end: VirtAddr = vpn_range.get_end().into();
+
+    // 处理 虚拟地址区间 [addr, addr+len) 存在未被映射的页的错误
+    for vpn in vpn_range {
+        if !inner.memory_set.have_mapped(&vpn) {
+            return -1;
+        }
+    }
+    // unmap 对应的映射
+    inner.memory_set.unmap(vpn_range);
+    (va_end.0 - va_start.0) as isize
+}
+
+pub fn port_to_permission(port: usize) -> MapPermission {
+    let mut map_perm = MapPermission::U;
+    if port & 0x01 != 0 { map_perm |= MapPermission::R; }
+    if port & 0x02 != 0 { map_perm |= MapPermission::W; }
+    if port & 0x04 != 0 { map_perm |= MapPermission::X; }
+    map_perm
 }

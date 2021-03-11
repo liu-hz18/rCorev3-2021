@@ -1,7 +1,7 @@
 // 把应用程序的一个计算阶段的执行过程（也是一段执行流）称为一个 任务
-use crate::mm::{MemorySet, MapPermission, PhysPageNum, KERNEL_SPACE, VirtAddr};
+use crate::mm::{MemorySet, PhysPageNum, KERNEL_SPACE, VirtAddr};
 use crate::trap::{TrapContext, trap_handler};
-use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY, TRAP_CONTEXT, kernel_stack_position};
+use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY, TRAP_CONTEXT};
 use super::TaskContext;
 use super::{PidHandle, pid_alloc, KernelStack};
 use alloc::sync::{Weak, Arc};
