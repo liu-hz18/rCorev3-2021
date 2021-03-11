@@ -155,6 +155,7 @@ impl PageTable {
         self.find_pte(vpn)
             .map(|pte| {pte.clone()})
     }
+    // satp token
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
@@ -163,7 +164,7 @@ impl PageTable {
 // 将 应用地址空间中一个缓冲区 转化为在 内核空间中能够直接访问 的形式
 pub fn translated_byte_buffer(
     token: usize, // 某个应用地址空间的 token 
-    ptr: *const u8, // 该地址空间中的一段缓冲区的起始地址 和长度
+    ptr: *const u8, // 该应用 虚拟地址空间中 的一段缓冲区的起始地址 和长度
     len: usize
 ) -> Vec<&'static [u8]> { // 以 向量 的形式返回一组可以在内核空间中直接访问的 字节数组切片
     let page_table = PageTable::from_token(token);
@@ -184,6 +185,32 @@ pub fn translated_byte_buffer(
         start = end_va.into();
     }
     v
+}
+
+pub fn virtual_addr_printable(token: usize, va: usize) -> (bool, usize) {
+    let page_table = PageTable::from_token(token);
+    let va = VirtAddr::from(va as usize);
+    let page_offset = va.page_offset() as usize;
+    let vpn = va.floor();
+    if let Some(pte) = page_table.translate(vpn) {
+        let pa_base: PhysAddr = pte.ppn().clone().into();
+        (
+            pte.is_valid() && (pte.readable() && !pte.executable()),
+            pa_base.0 + page_offset
+        )
+    } else {
+        (false, 0)
+    }
+}
+
+pub fn virtual_addr_range_printable(token: usize, ptr: *const u8, len: usize) -> (bool, usize, usize) {
+    let (start_printable, start_pa) = virtual_addr_printable(token, ptr as usize);
+    let (end_printable, end_pa) = virtual_addr_printable(token, ptr as usize + len);
+    (
+        start_printable && end_printable,
+        start_pa,
+        end_pa
+    )
 }
 
 pub fn translated_virtual_ptr<T>(

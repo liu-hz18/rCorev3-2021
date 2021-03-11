@@ -37,7 +37,7 @@ pre:
 
 CH2_TESTS := ch2 ch2t
 CH3_TESTS_BASE := $(CH2_TESTS) ch3_0 ch3t
-CH4_TESTS := ch2 ch3_0 ch4
+CH4_TESTS := $(CH2_TESTS) ch3_0 ch3_1 ch3_2 ch4 
 CH5_TESTS := $(CH4_TESTS) ch5
 CH6_TESTS := $(CH5_TESTS) ch6
 CH7_TESTS := $(CH6_TESTS) ch7

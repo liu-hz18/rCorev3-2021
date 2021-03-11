@@ -29,3 +29,33 @@ pub fn sys_get_time(ts: *mut TimeVal, tz: usize) -> isize {
 pub fn sys_set_priority(priority: isize) -> isize {
     set_task_priority(priority)
 }
+
+// 申请长度为 len 字节的物理内存
+// 并映射到 addr 开始的虚存，内存页属性为 port
+// addr 要求按页对齐(否则报错)，len 可直接按页上取整
+// 不考虑分配失败时的页回收（也就是内存泄漏）
+pub fn sys_mmap(
+    start: usize, // 需要映射的虚存起始地址
+    len: usize, // 映射字节长度，可以为 0 （如果是则直接返回），不可过大(上限 1GiB )
+    port: usize // 第 0 位表示是否可读，第 1 位表示是否可写，第 2 位表示是否可执行。其他位无效（必须为 0 ）
+) -> isize { // 正确时返回实际 map size（为 4096 的倍数），错误返回 -1
+    // 失败的情况
+    // 1. [addr, addr + len) 存在已经被映射的页
+    // 2. 物理内存不足
+    // 3. port & !0x7 != 0 (port 其余位必须为0)
+    // 4. port & 0x7 = 0 (这样的内存无意义)
+    // rust按 字节取反 应该使用!
+
+    0
+}
+
+// 取消一块虚存的映射
+pub fn sys_munmap(
+    start: usize,
+    len: usize,
+) -> isize {
+    // 参数错误时不考虑内存的恢复和回收
+    // 失败的情况:
+    // 1. [start, start + len) 中存在未被映射的虚存
+    0
+}
