@@ -22,10 +22,8 @@ fn insert_app_data() -> Result<()> {
         .collect();
     apps.sort();
 
-    println!("APPS: {:?}", apps);
-
     writeln!(f, r#"
-    # created by script build.rs
+# created by script build.rs
     .align 3
     .section .data
     .global _num_app
@@ -37,6 +35,13 @@ _num_app:
     }
     writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
 
+    writeln!(f, r#"
+    .global _app_names
+_app_names:"#)?;
+    for app in apps.iter() {
+        writeln!(f, r#"    .string "{}""#, app)?;
+    }
+
     for (idx, app) in apps.iter().enumerate() {
         println!("app_{}: {}", idx, app);
         writeln!(f, r#"
@@ -45,7 +50,7 @@ _num_app:
     .global app_{0}_end
     .align 3
 app_{0}_start:
-    # 不再插入清除全部符号的应用二进制镜像 *.bin ，而是将构建得到的 ELF 格式文件直接链接进来
+# 不再插入清除全部符号的应用二进制镜像 *.bin ，而是将构建得到的 ELF 格式文件直接链接进来
     .incbin "{2}{1}"
 app_{0}_end:"#, idx, app, TARGET_PATH)?;
     }

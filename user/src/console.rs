@@ -1,8 +1,9 @@
 use core::fmt::{self, Write};
-use super::write;
+use super::{read, write};
 
 struct Stdout;
 
+pub const STDIN: usize = 0;
 pub const STDOUT: usize = 1;
 
 // 基于 系统调用 write 的实现，且传入的 fd 参数设置为 1，它代表标准输出， 也就是输出到屏幕
@@ -29,4 +30,10 @@ macro_rules! println {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?));
     }
+}
+
+pub fn getchar() -> u8 {
+    let mut c = [0u8; 1];
+    read(STDIN, &mut c);
+    c[0]
 }

@@ -77,13 +77,15 @@ pub fn rust_main() -> ! {
     mm::init();
     println!("[kernel] back to world!");
     mm::remap_test();
+    task::add_initproc();
+    println!("after initproc!");
 
     logging::init();
     trap::init();
 
-    // loader::load_apps();
     trap::enable_timer_interrupt(); // 设置了 sie.stie 使得 S 特权级时钟中断不会被屏蔽
     timer::set_next_trigger(); // 设置第一个 10ms 的计时器
-    task::run_first_task();
+    loader::list_apps();
+    task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

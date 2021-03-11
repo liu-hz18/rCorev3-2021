@@ -122,6 +122,14 @@ impl VirtPageNum {
     }
 }
 
+impl PhysAddr {
+    pub fn get_mut<T>(&self) -> &'static mut T {
+        unsafe {
+            (self.0 as *mut T).as_mut().unwrap()
+        }
+    }
+}
+
 // S, U态 都是虚拟地址了
 // 内核中访问物理页帧: 为了简单，使用 恒等映射，虚拟页号就是对应的物理页号(仅在内核地址空间中)
 impl PhysPageNum {
@@ -145,9 +153,7 @@ impl PhysPageNum {
     // 获取一个恰好放在 一个物理页帧开头 的类型为 T 的数据的可变引用
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = self.clone().into();
-        unsafe {
-            (pa.0 as *mut T).as_mut().unwrap()
-        }
+        pa.get_mut()
     }
 }
 

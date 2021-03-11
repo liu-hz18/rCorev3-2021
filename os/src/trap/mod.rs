@@ -53,32 +53,59 @@ pub fn enable_timer_interrupt() {
 #[no_mangle]
 pub fn trap_handler() -> ! {
     // 将 stvec 修改为同模块下另一个函数 trap_from_kernel 的地址
-    set_kernel_trap_entry();
-    let cx = current_trap_cx(); // 获取当前应用的 Trap 上下文的可变引用
+    set_kernel_trap_entry(); 
     let scause = scause::read();
     let stval = stval::read();
     // 根据 scause 寄存器所保存的 Trap 的原因进行分发处理
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
+            // jump to next instruction anyway
+            let mut cx = current_trap_cx(); // 获取当前应用的 Trap 上下文的可变引用
             cx.sepc += 4; // 在 Trap 返回之后，我们希望应用程序执行流从 ecall 的下一条指令 开始执行
             // 这样在 __restore 的时候 sepc 在恢复之后就会指向 ecall 的下一条指令
-
+            // get system call return value
             // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值
-            cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            // cx is changed during sys_exec, so we have to call it again
+            cx = current_trap_cx();
+            cx.x[10] = result as usize;
         }
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
+            println!(
+                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
             println!("[kernel] Store PageFault in Application {} (killed), core dumped.", current_task_id());
-            exit_current_and_run_next(); // 直接切换并运行下一个 应用程序
+            exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::LoadFault) |
         Trap::Exception(Exception::LoadPageFault) => {
+            println!(
+                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
             println!("[kernel] Load PageFault in Application {} (killed), core dumped.", current_task_id());
-            exit_current_and_run_next(); // 直接切换并运行下一个 应用程序
+            exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
+        },
+        Trap::Exception(Exception::InstructionFault) |
+        Trap::Exception(Exception::InstructionPageFault) => {
+            println!(
+                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
+            println!("[kernel] Instruction PageFault in Application {} (killed), core dumped.", current_task_id());
+            exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
-            exit_current_and_run_next();
+            exit_current_and_run_next(-2);
         },
         // 抢占式调度
         // 中断不会被屏蔽，而是 Trap 到 S 特权级内的我们的 trap_handler 里面进行处理，并顺利切换到下一个应用

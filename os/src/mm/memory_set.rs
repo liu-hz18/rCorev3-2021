@@ -52,6 +52,7 @@ lazy_static! {
 // 用来表明正在运行的应用所在执行环境中的可访问内存空间
 // 在这个内存空间中，包含了一系列的不一定连续的逻辑段
 // 当一个地址空间 MemorySet 生命周期结束后， 这些物理页帧都会被回收
+#[derive(Debug)]
 pub struct MemorySet {
     page_table: PageTable, // PageTable 下 挂着所有多级页表的节点所在的物理页帧
     areas: Vec<MapArea>, // 对应逻辑段中的数据所在的物理页帧
@@ -86,6 +87,13 @@ impl MemorySet {
             MapType::Framed,
             permission,
         ), None);
+    }
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self.areas.iter_mut().enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn) {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
+        }
     }
     // 在当前地址空间插入一个新的逻辑段 map_area
     // 如果它是以 Framed 方式映射到 物理内存，还可以可选地在那些被映射到的物理页帧上写入一些初始化数据 data
@@ -243,6 +251,23 @@ impl MemorySet {
             elf.header.pt2.entry_point() as usize // 从解析 ELF 得到的该应用入口点地址
         )
     }
+    pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
+        let mut memory_set = Self::new_bare();
+        // map trampoline
+        memory_set.map_trampoline();
+        // copy data sections/trap_context/user_stack
+        for area in user_space.areas.iter() {
+            let new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
+            // copy data from another space
+            for vpn in area.vpn_range {
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                dst_ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
+        memory_set
+    }
     pub fn activate(&self) {
         // 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数，使得其 分页模式为 SV39, 且将当前多级页表的根节点所在的物理页号填充进去
         // 从这一刻开始 SV39 分页模式就被启用了
@@ -257,11 +282,16 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    pub fn recycle_data_pages(&mut self) {
+        //*self = Self::new_bare();
+        self.areas.clear();
+    }
 }
 
 // 逻辑段
 // 地址区间中的一段实际可用的地址连续的虚拟地址区间
 // 该区间内包含的所有虚拟页面都以一种相同的方式映射到物理页帧，具有可读/可写/可执行等属性
+#[derive(Debug)]
 pub struct MapArea {
     pub vpn_range: VPNRange, // 一段虚拟页号的连续区间, 是一个迭代器，可以使用 Rust 的语法糖 for-loop 进行迭代
     // 将这些物理页帧的生命周期绑定到它所在的逻辑段 MapArea 下
@@ -290,6 +320,14 @@ impl MapArea {
             map_perm,
         }
     }
+    pub fn from_another(another: &MapArea) -> Self {
+        Self {
+            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+            data_frames: BTreeMap::new(),
+            map_type: another.map_type,
+            map_perm: another.map_perm,
+        }
+    }
     // 单个虚拟页面进行映射/解映射
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         // 虚拟页号 vpn 已经确定
@@ -313,7 +351,6 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
-    #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         match self.map_type {
             // 当以 Framed 映射的时候，不要忘记同时将虚拟页面被映射到的物理页帧 FrameTracker 从 data_frames 中移除
@@ -331,7 +368,6 @@ impl MapArea {
             self.map_one(page_table, vpn);
         }
     }
-    #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);

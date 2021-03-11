@@ -48,6 +48,12 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
     syscall(SYSCALL_WRITE, [fd, buffer.as_ptr() as usize, buffer.len()])
 }
 
+pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
+    syscall(
+        SYSCALL_READ,
+        [fd, buffer.as_mut_ptr() as usize, buffer.len()],
+    )
+}
 
 /// 功能：退出应用程序并将返回值告知批处理系统。
 /// 参数：`exit_code` 表示应用程序的返回值。
@@ -81,4 +87,24 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     syscall(SYSCALL_MUNMAP, [start, len, 0])
+}
+
+pub fn sys_getpid() -> isize {
+    syscall(SYSCALL_GETPID, [0, 0, 0])
+}
+
+pub fn sys_fork() -> isize {
+    syscall(SYSCALL_FORK, [0, 0, 0])
+}
+
+pub fn sys_exec(path: &str) -> isize {
+    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, 0, 0])
+}
+
+pub fn sys_waitpid(pid: isize, xstatus: *mut i32) -> isize {
+    syscall(SYSCALL_WAITPID, [pid as usize, xstatus as usize, 0])
+}
+
+pub fn sys_spawn(path: &str) -> isize {
+    syscall(SYSCALL_SPAWN, [path.as_ptr() as usize, 0, 0])
 }
