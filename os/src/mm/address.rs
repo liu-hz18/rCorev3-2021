@@ -160,7 +160,7 @@ impl StepByOne for VirtPageNum {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SimpleRange<T> where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug, {
     l: T,

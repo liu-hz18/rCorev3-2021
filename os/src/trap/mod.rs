@@ -68,12 +68,16 @@ pub fn trap_handler() -> ! {
         }
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
-            println!("[kernel] PageFault in application {}(killed), core dumped.", current_task_id());
-            // 直接切换并运行下一个 应用程序
-            exit_current_and_run_next();
-        }
+            println!("[kernel] Store PageFault in Application {} (killed), core dumped.", current_task_id());
+            exit_current_and_run_next(); // 直接切换并运行下一个 应用程序
+        },
+        Trap::Exception(Exception::LoadFault) |
+        Trap::Exception(Exception::LoadPageFault) => {
+            println!("[kernel] Load PageFault in Application {} (killed), core dumped.", current_task_id());
+            exit_current_and_run_next(); // 直接切换并运行下一个 应用程序
+        },
         Trap::Exception(Exception::IllegalInstruction) => {
-            println!("[kernel] IllegalInstruction in application {}(killed), core dumped.", current_task_id());
+            println!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
             exit_current_and_run_next();
         },
         // 抢占式调度
@@ -83,7 +87,7 @@ pub fn trap_handler() -> ! {
             suspend_current_and_run_next(); // 暂停当前应用并切换到下一个
         },
         _ => {
-            panic!("Unsupported trap {:?}, stval = {:#x}!, app_id = {}(killed)", scause.cause(), stval, current_task_id());
+            panic!("Unsupported trap {:?}, stval = {:#x}!, Application {} (killed)", scause.cause(), stval, current_task_id());
         }
     }
     trap_return();

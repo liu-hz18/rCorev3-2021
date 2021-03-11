@@ -39,7 +39,7 @@ READOBJ := rust-readobj -all
 ADDR := 0x8002000c
 
 
-TEST := ch4
+CHAPTER := 4
 
 # Disassembly
 DISASM ?= -x -D
@@ -61,7 +61,7 @@ $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
-	@cd ../user && make $(TEST)
+	@cd ../user && make all CHAPTER=$(CHAPTER)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release

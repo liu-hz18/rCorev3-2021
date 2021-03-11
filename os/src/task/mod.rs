@@ -5,11 +5,14 @@ mod task;
 
 use crate::loader::{get_num_app, get_app_data};
 use crate::trap::TrapContext;
+use crate::mm::{VirtAddr, VPNRange, MapPermission, MapArea, MapType};
+use crate::config::{PAGE_SIZE};
+// use crate::timer::{get_time_ms};
+
 use core::cell::RefCell;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
-// use crate::timer::{get_time_ms};
 use alloc::vec::Vec;
 
 pub use context::TaskContext;
@@ -161,6 +164,69 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn map_virtual_pages(&self, addr: usize, len: usize, port: usize) -> isize {
+        // addr 按页 (4096 Byte) 对齐, len \in [0, 1GB = 0x4000_0000) 
+        // port 其余位必须为0, port & 0x7 = 0
+        if addr & (PAGE_SIZE-1) != 0 || len > 0x4000_0000 || (port & !0x7) != 0 || port & 0x7 == 0 { 
+            return -1;
+        }
+        if len == 0 { return 0; }
+        let mut inner = self.inner.borrow_mut();
+        let current = inner.current_task;
+        let map_perm = port_to_permission(port);
+        let map_area: MapArea = MapArea::new(
+            addr.into(),
+            (addr+len).into(),
+            MapType::Framed,
+            map_perm
+        );
+        let vpn_range: VPNRange = map_area.vpn_range;
+        // 处理 虚拟地址区间 [addr, addr+len) 存在已经被映射的页的错误
+        for vpn in vpn_range {
+            if inner.tasks[current].memory_set.have_mapped(&vpn) {
+                return -1;
+            }
+        }
+        let va_start: VirtAddr = vpn_range.get_start().into();
+        let va_end: VirtAddr = vpn_range.get_end().into();
+        // TODO: 处理物理内存不足的错误, 目前直接panic
+        inner.tasks[current].memory_set.push(map_area, None);
+        (va_end.0 - va_start.0) as isize
+    }
+
+    pub fn unmap_virtual_pages(&self, addr: usize, len: usize) -> isize {
+        if addr & (PAGE_SIZE-1) != 0 || len > 0x4000_0000 { 
+            return -1;
+        }
+        if len == 0 { return 0; }
+        let mut inner = self.inner.borrow_mut();
+        let current = inner.current_task;
+
+        let start_va: VirtAddr = addr.into();
+        let end_va: VirtAddr = (addr+len).into();
+        let vpn_range: VPNRange = VPNRange::new(start_va.floor(), end_va.ceil());
+        let va_start: VirtAddr = vpn_range.get_start().into();
+        let va_end: VirtAddr = vpn_range.get_end().into();
+
+        // 处理 虚拟地址区间 [addr, addr+len) 存在未被映射的页的错误
+        for vpn in vpn_range {
+            if !inner.tasks[current].memory_set.have_mapped(&vpn) {
+                return -1;
+            }
+        }
+        // unmap 对应的映射
+        inner.tasks[current].memory_set.unmap(vpn_range);
+        (va_end.0 - va_start.0) as isize
+    }
+}
+
+pub fn port_to_permission(port: usize) -> MapPermission {
+    let mut map_perm = MapPermission::U;
+    if port & 0x01 != 0 { map_perm |= MapPermission::R; }
+    if port & 0x02 != 0 { map_perm |= MapPermission::W; }
+    if port & 0x04 != 0 { map_perm |= MapPermission::X; }
+    map_perm
 }
 
 pub fn run_first_task() {
@@ -210,4 +276,12 @@ pub fn current_user_token() -> usize {
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+pub fn map_virtual_block(addr: usize, len: usize, port: usize) -> isize {
+    TASK_MANAGER.map_virtual_pages(addr, len, port)
+}
+
+pub fn unmap_virtual_block(addr: usize, len: usize) -> isize {
+    TASK_MANAGER.unmap_virtual_pages(addr, len)
 }

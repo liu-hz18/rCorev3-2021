@@ -220,7 +220,7 @@ pub fn translated_virtual_ptr<T>(
     let page_table = PageTable::from_token(token);
     let va = VirtAddr::from(v_ptr as usize);
     let page_offset = va.page_offset() as usize;
-    let mut vpn = va.floor();
+    let vpn = va.floor();
     let ppn = page_table
         .translate(vpn)
         .unwrap()

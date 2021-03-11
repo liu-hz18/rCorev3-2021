@@ -3,6 +3,8 @@ use crate::task::{
     exit_current_and_run_next,
     current_task_id,
     set_task_priority,
+    map_virtual_block,
+    unmap_virtual_block,
 };
 use crate::timer::{get_time_sys, TimeVal};
 
@@ -44,9 +46,8 @@ pub fn sys_mmap(
     // 2. 物理内存不足
     // 3. port & !0x7 != 0 (port 其余位必须为0)
     // 4. port & 0x7 = 0 (这样的内存无意义)
-    // rust按 字节取反 应该使用!
-
-    0
+    // rust按 字节取反 应该使用 `!`
+    map_virtual_block(start, len, port)
 }
 
 // 取消一块虚存的映射
@@ -57,5 +58,5 @@ pub fn sys_munmap(
     // 参数错误时不考虑内存的恢复和回收
     // 失败的情况:
     // 1. [start, start + len) 中存在未被映射的虚存
-    0
+    unmap_virtual_block(start, len)
 }

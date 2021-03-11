@@ -68,6 +68,14 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+    pub fn have_mapped(&self, vpn: &VirtPageNum) -> bool {
+        for area in self.areas.iter() {
+            if area.have_mapped(vpn) {
+                return true;
+            }
+        }
+        false
+    }
     /// Assume that no conflicts.
     /// 在当前地址空间插入一个 Framed 方式映射到 物理内存的逻辑段
     /// 该方法的调用者要保证同一地址空间内的任意两个逻辑段不能存在交集
@@ -81,12 +89,21 @@ impl MemorySet {
     }
     // 在当前地址空间插入一个新的逻辑段 map_area
     // 如果它是以 Framed 方式映射到 物理内存，还可以可选地在那些被映射到的物理页帧上写入一些初始化数据 data
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+    pub fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
         }
         self.areas.push(map_area);
+    }
+    pub fn unmap(&mut self, vpn_range: VPNRange) {
+        for vpn in vpn_range {
+            for area in self.areas.iter_mut() { // this iterator yields `&` references
+                if area.have_mapped(&vpn) {
+                    area.unmap_one(&mut self.page_table, vpn);
+                }
+            }
+        }
     }
     /// Mention that trampoline is not collected by areas.
     /// 注意无论是内核还是应用的地址空间，跳板页面均位于同样位置，且它们也将会映射到同一个实际存放这段 汇编代码的物理页帧。
@@ -246,7 +263,7 @@ impl MemorySet {
 // 地址区间中的一段实际可用的地址连续的虚拟地址区间
 // 该区间内包含的所有虚拟页面都以一种相同的方式映射到物理页帧，具有可读/可写/可执行等属性
 pub struct MapArea {
-    vpn_range: VPNRange, // 一段虚拟页号的连续区间, 是一个迭代器，可以使用 Rust 的语法糖 for-loop 进行迭代
+    pub vpn_range: VPNRange, // 一段虚拟页号的连续区间, 是一个迭代器，可以使用 Rust 的语法糖 for-loop 进行迭代
     // 将这些物理页帧的生命周期绑定到它所在的逻辑段 MapArea 下
     data_frames: BTreeMap<VirtPageNum, FrameTracker>, // 保存了该逻辑段内的每个虚拟页面 和它被映射到的物理页帧 FrameTracker 的一个键值对容器 BTreeMap 中
     map_type: MapType, // 该逻辑段内的所有虚拟页面映射到物理页帧的同一种方式
@@ -265,6 +282,7 @@ impl MapArea {
     ) -> Self {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
+        // println!("map: s_va={:?}, e_va={:?}, s_vpn={:?}, e_vpn={:?}", start_va, end_va, start_vpn, end_vpn);
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
@@ -318,6 +336,9 @@ impl MapArea {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
+    }
+    pub fn have_mapped(&self, vpn: &VirtPageNum) -> bool {
+        self.data_frames.contains_key(vpn)
     }
     // 将切片 data 中的数据 拷贝到 当前逻辑段实际被内核放置在的各物理页帧 上
     // 切片 data 中的数据大小不超过当前逻辑段的 总大小
