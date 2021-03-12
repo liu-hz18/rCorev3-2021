@@ -2,7 +2,7 @@ use super::TaskControlBlock;
 use alloc::sync::Arc;
 use core::cell::RefCell;
 use lazy_static::*;
-use super::{fetch_task, TaskStatus, running_task_num};
+use super::{fetch_task, TaskStatus};
 use super::__switch;
 use crate::trap::TrapContext;
 use crate::config::{BIG_STRIDE};

@@ -16,6 +16,8 @@ pub use page_table::{
     virtual_addr_writable,
     translated_str,
     translated_refmut,
+    UserBuffer,
+    UserBufferIterator,
 };
 pub use memory_set::{MemorySet, KERNEL_SPACE, MapPermission, MapArea, MapType};
 pub use memory_set::remap_test;

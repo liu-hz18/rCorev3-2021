@@ -106,3 +106,5 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
 pub fn spawn(path: &str) -> isize {
     sys_spawn(path)
 }
+pub fn close(fd: usize) -> isize { sys_close(fd) }
+pub fn pipe(pipe_fd: &mut [usize]) -> isize { sys_pipe(pipe_fd) }

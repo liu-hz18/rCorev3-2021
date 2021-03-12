@@ -269,3 +269,60 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     //println!("translated_refmut: before translate_va");
     page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut()
 }
+
+// 应用虚拟地址空间中的一段缓冲区的抽象, 存放的是一些 虚拟地址区间
+// 本质上其实只是一个 &[u8], 给出了缓冲区的起始地址及长度
+// 但是它位于应用地址空间中，在内核中我们无法直接通过这种方式来访问，因此需要进行封装
+pub struct UserBuffer {
+    pub buffers: Vec<&'static mut [u8]>,
+}
+
+impl UserBuffer {
+    pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
+        Self { buffers }
+    }
+    pub fn len(&self) -> usize {
+        let mut total: usize = 0;
+        for b in self.buffers.iter() {
+            total += b.len();
+        }
+        total
+    }
+}
+
+impl IntoIterator for UserBuffer {
+    type Item = *mut u8;
+    type IntoIter = UserBufferIterator;
+    fn into_iter(self) -> Self::IntoIter {
+        UserBufferIterator {
+            buffers: self.buffers,
+            current_buffer: 0,
+            current_idx: 0,
+        }
+    }
+}
+
+pub struct UserBufferIterator {
+    buffers: Vec<&'static mut [u8]>,
+    current_buffer: usize,
+    current_idx: usize,
+}
+
+// 作为一个迭代器可以逐字节进行读写
+impl Iterator for UserBufferIterator {
+    type Item = *mut u8;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_buffer >= self.buffers.len() {
+            None
+        } else {
+            let r = &mut self.buffers[self.current_buffer][self.current_idx] as *mut _;
+            if self.current_idx + 1 == self.buffers[self.current_buffer].len() {
+                self.current_idx = 0;
+                self.current_buffer += 1;
+            } else {
+                self.current_idx += 1;
+            }
+            Some(r)
+        }
+    }
+}

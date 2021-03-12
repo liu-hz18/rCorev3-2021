@@ -2,6 +2,7 @@ use super::{TimeVal};
 
 const SYSCALL_OPENAT: usize = 56;
 const SYSCALL_CLOSE: usize = 57;
+const SYSCALL_PIPE: usize = 59;
 const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_UNLINKAT: usize = 35;
@@ -125,4 +126,12 @@ pub fn sys_waitpid(pid: isize, xstatus: *mut i32) -> isize {
 
 pub fn sys_spawn(path: &str) -> isize {
     syscall(SYSCALL_SPAWN, [path.as_ptr() as usize, 0, 0])
+}
+
+pub fn sys_pipe(pipe: &mut [usize]) -> isize {
+    syscall(SYSCALL_PIPE, [pipe.as_mut_ptr() as usize, 0, 0])
+}
+
+pub fn sys_close(fd: usize) -> isize {
+    syscall(SYSCALL_CLOSE, [fd, 0, 0])
 }

@@ -13,8 +13,7 @@ use crate::timer::{get_time_sys, TimeVal};
 use crate::mm::{
     translated_str,
     translated_refmut,
-    virtual_addr_writable,
-    usable_frames
+    virtual_addr_writable
 };
 use crate::loader::get_app_data_by_name;
 use alloc::sync::Arc;
@@ -184,6 +183,7 @@ pub fn sys_waitpid_blocking(
             .iter()
             .find(|p| {pid == -1 || pid == 0 || pid as usize == p.getpid()})
             .is_none() {
+            drop(inner);
             return -1;
             // ---- release current PCB lock
         }

@@ -5,9 +5,11 @@ use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY, TRAP_CONTEXT};
 use super::TaskContext;
 use super::{PidHandle, pid_alloc, KernelStack};
 use alloc::sync::{Weak, Arc};
+use alloc::vec;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 use core::cmp::{Ordering};
+use crate::fs::{File, Stdin, Stdout};
 
 // 进程控制块
 // 线程成为CPU（也称处理器）调度（scheduling）和分派（switch）的对象
@@ -38,6 +40,12 @@ pub struct TaskControlBlockInner {
     pub parent: Option<Weak<TaskControlBlock>>, // 使用 Weak 而非 Arc 来包裹另一个任务控制块，因此这个智能指针将不会影响父进程的引用计数
     pub children: Vec<Arc<TaskControlBlock>>,
     pub exit_code: i32,
+
+    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, // 文件描述符表
+    // Vec 的动态长度特性使得我们无需设置一个固定的文件描述符数量上限
+    // Option 使得我们可以区分一个文件描述符当前是否空闲，当它是 None 的时候是空闲的，而 Some 则代表它已被占用
+    // Arc 首先提供了共享引用能力, 可能会有多个进程共享同一个文件对它进行读写
+    // dyn 关键字表明 Arc 里面的类型实现了 File/Send/Sync 三个 Trait, 等到运行时才能知道它的具体类型 (Rust 多态)
 }
 // 子进程的进程控制块并不会被直接放到父进程控制块下面，因为子进程完全有可能在父进程退出后仍然存在
 // 因此进程控制块的本体是被放到内核堆上面的，对于它的一切访问都是通过智能指针 Arc/Weak 来进行的
@@ -82,7 +90,18 @@ impl TaskControlBlockInner {
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
-    
+    // 最先匹配
+    // 在进程控制块中分配一个最小的空闲文件描述符来访问一个新打开的文件
+    pub fn alloc_fd(&mut self) -> usize {
+        // 从小到大遍历所有曾经被分配过的文件描述符尝试找到一个空闲的
+        if let Some(fd) = (0..self.fd_table.len())
+            .find(|fd| self.fd_table[*fd].is_none()) {
+            fd
+        } else { // 如果没有的话就需要拓展文件描述符表的长度并新分配一个
+            self.fd_table.push(None); // 一开始是None, 因为这时候只是分配了描述符，还不知道是什么文件
+            self.fd_table.len() - 1
+        }
+    }
 }
 
 impl TaskControlBlock {
@@ -130,6 +149,17 @@ impl TaskControlBlock {
                 parent: None,
                 children: Vec::new(),
                 exit_code: 0,
+                // 内核会默认为其打开三个文件
+                fd_table: vec![
+                    // 0 -> stdin
+                    Some(Arc::new(Stdin)), // 文件描述符为 0 的标准输入
+                    // 1 -> stdout
+                    Some(Arc::new(Stdout)), // 文件描述符为 1 的标准输出；
+                    // 2 -> stderr
+                    Some(Arc::new(Stdout)), // 文件描述符为 2 的标准错误输出
+                ],
+                // 在我们的实现中并不区分标准输出和标准错误输出
+                // 进程打开一个文件的时候，内核总是会将文件分配到该进程文件描述符表中 最小的 空闲位置 (最先匹配算法)
             }),
         };
         // prepare TrapContext in user space
@@ -199,6 +229,16 @@ impl TaskControlBlock {
         // push a goto_trap_return task_cx on the top of kernel stack
         // 子进程内核栈上压入一个初始化的任务上下文，使得内核一旦通过任务切换到该进程，就会跳转到 trap_return 来进入用户态
         let task_cx_ptr = kernel_stack.push_on_top(TaskContext::goto_trap_return());
+        // copy fd table, 子进程需要完全继承父进程的文件描述符表来和父进程共享所有文件
+        // 这样，即使我们 仅手动为初始进程 initproc 打开了标准输入输出，所有进程也都可以访问它们
+        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        for fd in parent_inner.fd_table.iter() {
+            if let Some(file) = fd {
+                new_fd_table.push(Some(file.clone()));
+            } else {
+                new_fd_table.push(None);
+            }
+        }
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
@@ -216,6 +256,8 @@ impl TaskControlBlock {
                 parent: Some(Arc::downgrade(self)), // 将父进程的弱引用计数放到子进程的进程控制块中
                 children: Vec::new(),
                 exit_code: 0,
+
+                fd_table: new_fd_table,
             }),
         });
         // 注意父子进程关系的维护
