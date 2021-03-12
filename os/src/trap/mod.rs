@@ -67,6 +67,9 @@ pub fn trap_handler() -> ! {
             // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值
             let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
             // cx is changed during sys_exec, so we have to call it again
+            // 对于系统调用 sys_exec 来说，一旦调用它之后，我们会发现 trap_handler 原来上下文中的 cx 失效了
+            // 因为它是用来访问 之前地址空间 中 Trap 上下文被保存在的那个物理页帧的, 而现在它已经被回收掉了
+            // 所以我们 需要重新获取 cx
             cx = current_trap_cx();
             cx.x[10] = result as usize;
         }
@@ -105,7 +108,7 @@ pub fn trap_handler() -> ! {
         },
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
-            exit_current_and_run_next(-2);
+            exit_current_and_run_next(-3);
         },
         // 抢占式调度
         // 中断不会被屏蔽，而是 Trap 到 S 特权级内的我们的 trap_handler 里面进行处理，并顺利切换到下一个应用
@@ -146,7 +149,7 @@ pub fn trap_return() -> ! {
 
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
-    panic!("a trap from kernel!");
+    panic!("a trap {:?} from kernel!", scause::read().cause());
 }
 
 pub use context::TrapContext;

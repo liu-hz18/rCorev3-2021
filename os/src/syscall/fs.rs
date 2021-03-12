@@ -32,9 +32,11 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     match fd {
         FD_STDIN => {
+            // 单次读入的长度限制为 1，即每次只能读入一个字符
             assert_eq!(len, 1, "Only support len = 1 in sys_read!");
             let mut c: usize;
             loop {
+                // 如果返回 0 的话说明还没有输入，我们调用 suspend_current_and_run_next 暂时切换到其他进程
                 c = console_getchar();
                 if c == 0 {
                     suspend_current_and_run_next();
@@ -43,6 +45,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
                     break;
                 }
             }
+            // 获取到输入之后，我们退出循环并手动查页表将输入的字符正确的写入到应用地址空间
             let ch = c as u8;
             let mut buffers = translated_byte_buffer(current_user_token(), buf, len);
             unsafe { buffers[0].as_mut_ptr().write_volatile(ch); }

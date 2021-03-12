@@ -5,13 +5,18 @@ use spin::Mutex;
 use lazy_static::*;
 use core::cmp::Reverse;
 
+// 任务管理器
+// 这里，任务指的就是进程
 pub struct TaskManager {
+    // 在任务管理器中仅存放他们的引用计数智能指针
+    // 这样做的原因在于，任务控制块经常需要被放入/取出，如果直接移动任务控制块自身将会带来大量的数据拷贝开销
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
 }
 
 /// A simple FIFO scheduler.
 impl TaskManager {
     pub fn new() -> Self {
+        // 双端队列
         Self { ready_queue: VecDeque::new(), }
     }
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
@@ -25,7 +30,7 @@ impl TaskManager {
     }
 }
 
-// TODO: Stride Algo. TaskManager using alloc::collections::binary_heap::BinaryHeap
+// Stride Algo. TaskManager using alloc::collections::binary_heap::BinaryHeap
 pub struct StrideTaskManager {
     ready_queue: BinaryHeap<Reverse<Arc<TaskControlBlock>>>
 }

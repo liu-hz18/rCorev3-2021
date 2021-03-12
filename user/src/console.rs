@@ -32,6 +32,7 @@ macro_rules! println {
     }
 }
 
+// 我们每次临时声明一个长度为 1 的缓冲区
 pub fn getchar() -> u8 {
     let mut c = [0u8; 1];
     read(STDIN, &mut c);

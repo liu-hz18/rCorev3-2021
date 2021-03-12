@@ -25,6 +25,7 @@ pub fn get_app_data(app_id: usize) -> &'static [u8] {
 }
 
 lazy_static! {
+    // 全局可见的 只读 向量 APP_NAMES
     static ref APP_NAMES: Vec<&'static str> = {
         let num_app = get_num_app();
         extern "C" { fn _app_names(); }
@@ -46,7 +47,7 @@ lazy_static! {
     };
 }
 
-
+// 基于应用名的应用链接/加载器
 #[allow(unused)]
 pub fn get_app_data_by_name(name: &str) -> Option<&'static [u8]> {
     let num_app = get_num_app();

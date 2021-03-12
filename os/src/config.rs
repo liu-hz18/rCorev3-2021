@@ -3,7 +3,7 @@ pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
 
 // 页表&虚存机制
 pub const KERNEL_HEAP_SIZE: usize = 0x30_0000;
-pub const MEMORY_END: usize = 0x80800000; // 硬编码整块物理内存的终止物理地址为 0x80800000, 可用内存大小设置为 8MiB 
+pub const MEMORY_END: usize = 0x80900000; // 硬编码整块物理内存的终止物理地址为 0x80800000, 可用内存大小设置为 8MiB 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 // 可用的物理内存对应的物理页号: [ekernel.ceil(), MEMORY_END.floor())

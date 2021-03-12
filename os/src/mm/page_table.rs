@@ -25,7 +25,7 @@ bitflags! {
 
 // 页表项 (PTE, Page Table Entry) 
 // Copy, Clone: 以值语义赋值/传参的时候 不会发生所有权转移，而是拷贝一份新的副本
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct PageTableEntry {
     pub bits: usize,
@@ -68,7 +68,6 @@ impl PageTableEntry {
 // 每个应用的地址空间都对应一个不同的多级页表，这也就意味这不同页表的起始地址（即页表根节点的地址）是不一样的
 // PageTable 要保存它根节点的物理页号 root_ppn 作为页表唯一的区分标志
 // NOTE: 当 PageTable 生命周期结束后，向量 frames 里面的那些 FrameTracker 也会被回收，也就意味着存放多级页表节点的那些物理页帧 被回收了
-#[derive(Debug)]
 pub struct PageTable {
     root_ppn: PhysPageNum,
     frames: Vec<FrameTracker>, // 保存了页表所有的节点（包括根节点）所在的物理页帧
@@ -217,6 +216,16 @@ pub fn virtual_addr_printable(token: usize, va: usize) -> (bool, usize) {
     }
 }
 
+pub fn virtual_addr_writable(token: usize, va: usize) -> bool {
+    let va = VirtAddr::from(va);
+    let page_table = PageTable::from_token(token);
+    if let Some(pte) = page_table.translate_pte(va) {
+        pte.is_valid() && pte.readable() && pte.writable()
+    } else {
+        false
+    }
+}
+
 pub fn virtual_addr_range_printable(token: usize, ptr: *const u8, len: usize) -> (bool, usize, usize) {
     let (start_printable, start_pa) = virtual_addr_printable(token, ptr as usize);
     let (end_printable, end_pa) = virtual_addr_printable(token, ptr as usize + len);
@@ -236,6 +245,7 @@ pub fn translated_virtual_ptr<T>(
     pa as *mut T
 }
 
+// 从内核地址空间之外的某个地址空间中拿到一个字符串，其原理就是逐字节查页表直到发现一个 \0 为止
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();

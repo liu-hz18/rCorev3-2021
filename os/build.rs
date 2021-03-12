@@ -36,8 +36,11 @@ _num_app:
     writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
 
     writeln!(f, r#"
+# 保存链接进来的每个应用的名字
     .global _app_names
 _app_names:"#)?;
+// 按照顺序将各个应用的名字通过 .string 伪指令放到数据段中
+// 链接器会自动在每个字符串的结尾加入分隔符 \0
     for app in apps.iter() {
         writeln!(f, r#"    .string "{}""#, app)?;
     }

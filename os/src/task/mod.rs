@@ -11,7 +11,7 @@ use task::{TaskControlBlock, TaskStatus};
 use alloc::sync::Arc;
 use manager::fetch_task;
 use lazy_static::*;
-use crate::mm::{MapPermission, MapType, MapArea, VPNRange, VirtAddr};
+use crate::mm::{MapPermission, MapType, MapArea, VPNRange, VirtAddr, usable_frames};
 use crate::config::PAGE_SIZE;
 
 pub use context::TaskContext;
@@ -28,8 +28,11 @@ pub use processor::{
 pub use manager::{add_task, running_task_num};
 pub use pid::{PidHandle, pid_alloc, KernelStack};
 
+// 暂停当前任务并切换到下一个任务
+// 注意，当仅有一个任务的时候， suspend_current_and_run_next 的效果是会继续执行这个任务
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
+    // 取出当前正在执行的任务
     let task = take_current_task().unwrap();
 
     // ---- hold current PCB lock
@@ -45,29 +48,35 @@ pub fn suspend_current_and_run_next() {
     schedule(task_cx_ptr2);
 }
 
+// 当进程退出的时候内核立即回收一部分资源并将该进程标记为 僵尸进程
 pub fn exit_current_and_run_next(exit_code: i32) {
     // take from Processor
+    // 将当前进程控制块从处理器监控 PROCESSOR 中取出而不是得到一份拷贝
+    // 为了正确维护进程控制块的引用计数
     let task = take_current_task().unwrap();
     // **** hold current PCB lock
     let mut inner = task.acquire_inner_lock();
     // Change status to Zombie
     inner.task_status = TaskStatus::Zombie;
     // Record exit code
+    // 将传入的退出码 exit_code 写入进程控制块中，后续父进程在 waitpid 的时候可以收集
     inner.exit_code = exit_code;
     // do not move to its parent but under initproc
 
     // ++++++ hold initproc PCB lock here
+    // 将当前进程的所有子进程挂在初始进程 initproc 下面
     {
         let mut initproc_inner = INITPROC.acquire_inner_lock();
-        for child in inner.children.iter() {
-            child.acquire_inner_lock().parent = Some(Arc::downgrade(&INITPROC));
-            initproc_inner.children.push(child.clone());
+        for child in inner.children.iter() { // 遍历每个子进程
+            child.acquire_inner_lock().parent = Some(Arc::downgrade(&INITPROC)); // 修改其父进程为初始进程
+            initproc_inner.children.push(child.clone()); // 加入初始进程的孩子向量中
         }
     }
     // ++++++ release parent PCB lock here
 
-    inner.children.clear();
-    // deallocate user space
+    inner.children.clear(); // 将当前进程的孩子向量清空
+    // deallocate user space, 对于当前进程占用的资源进行早期回收
+    // 只是将地址空间中的逻辑段列表 areas 清空，这将导致应用地址空间的所有数据被存放在的物理页帧被回收，而用来存放页表的那些物理页帧此时则不会被回收
     inner.memory_set.recycle_data_pages();
     drop(inner);
     // **** release current PCB lock
@@ -75,12 +84,15 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     drop(task);
     // we do not have to save task context
     let _unused: usize = 0;
+    // println!("unused physical frames: {}", usable_frames());
+    // 我们再也不会回到该进程的执行过程中，因此无需关心任务上下文的保存
     schedule(&_unused as *const _);
 }
 
+// 将初始进程 initproc 加入任务管理器
 lazy_static! {
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(
-        TaskControlBlock::new(get_app_data_by_name("ch5_usershell").unwrap())
+        TaskControlBlock::new(get_app_data_by_name("ch5_initproc").unwrap())
     );
 }
 

@@ -13,6 +13,8 @@ use crate::timer::{get_time_sys, TimeVal};
 use crate::mm::{
     translated_str,
     translated_refmut,
+    virtual_addr_writable,
+    usable_frames
 };
 use crate::loader::get_app_data_by_name;
 use alloc::sync::Arc;
@@ -75,12 +77,15 @@ pub fn sys_getpid() -> isize {
     current_task().unwrap().pid.0 as isize
 }
 
+// 父进程的返回值为新创建进程的 PID ，而新创建进程的返回值为 0 
+// 每个进程可能有多个子进程，但最多只能有一个父进程
 pub fn sys_fork() -> isize {
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.acquire_inner_lock().get_trap_cx();
+    // 将子进程的 Trap 上下文用来存放系统调用返回值的 a0 寄存器修改为 0 
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
     trap_cx.x[10] = 0;
@@ -134,23 +139,34 @@ pub fn sys_waitpid_non_blocking(
             // ++++ release child PCB lock
         });
     if let Some((idx, _)) = pair {
+        // 将子进程从向量中移除并置于当前上下文中
+        // 这是对于该子进程控制块的唯一一次强引用, 即它不会出现在某个进程的子进程向量中
         let child = inner.children.remove(idx);
         // confirm that child will be deallocated after removing from children list
         assert_eq!(Arc::strong_count(&child), 1);
+        // 收集的子进程信息返回回去
         let found_pid = child.getpid();
         // ++++ temporarily hold child lock
         let exit_code = child.acquire_inner_lock().exit_code;
         // ++++ release child PCB lock
         // 判断 exit_code_ptr 是否合法
-
-        *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
-        found_pid as isize
+        if virtual_addr_writable(inner.memory_set.token(), exit_code_ptr as usize) {
+            // 手动查页表找到应该写入到物理内存中的哪个位置
+            *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+            return found_pid as isize;
+        } else {
+            println!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
+            return -1 as isize;
+        }
     } else {
         -1
     }
     // ---- release current PCB lock automatically
 }
 
+// 一般情况下一个进程要负责通过 waitpid 系统调用来等待所有它 fork 出来的子进程结束并回收掉它们占据的资源
+// 如果一个进程先于它的子进程结束，在它退出的时候，它的 所有子进程 将成为 进程树的根节点即初始进程 的子进程，同时这些子进程的父进程也会变成初始进程
+// 这之后，这些子进程的资源就由初始进程负责回收了，这也是初始进程很重要的一个用途
 pub fn sys_waitpid_blocking(
     pid: isize, // 表示要等待结束的子进程的进程 ID, 如果为 0或者-1 的话表示等待任意一个子进程结束
     exit_code_ptr: *mut i32 // 保存子进程返回值的地址，如果这个地址为 0 的话表示不必保存
@@ -191,10 +207,13 @@ pub fn sys_waitpid_blocking(
             let exit_code = child.acquire_inner_lock().exit_code;
             // ++++ release child PCB lock
             // 判断 exit_code_ptr 是否合法
-
-            *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
-            drop(inner);
-            return found_pid as isize;
+            if virtual_addr_writable(inner.memory_set.token(), exit_code_ptr as usize) {
+                *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+                return found_pid as isize;
+            } else {
+                println!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
+                return -1 as isize;
+            }
         } else {
             // 阻塞方式实现
             drop(inner); // 注意释放互斥锁
@@ -205,6 +224,7 @@ pub fn sys_waitpid_blocking(
     // ---- release current PCB lock automatically
 }
 
+// 利用 fork 和 exec 的组合，我们很容易在一个进程内 fork 出一个子进程并执行一个特定的可执行文件
 // 创建一个子进程并执行目标路径文件，暂时不考虑参数，不要求立即开始执行，相当于 fork + exec
 // 相当于 fork + exec，新建子进程并执行目标程序
 // 成功返回子进程id，否则返回 -1

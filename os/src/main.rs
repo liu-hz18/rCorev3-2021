@@ -75,10 +75,9 @@ pub fn rust_main() -> ! {
 
     println!("[kernel] Hello, world!");
     mm::init();
-    println!("[kernel] back to world!");
     mm::remap_test();
     task::add_initproc();
-    println!("after initproc!");
+    println!("[kernel] after initproc!");
 
     logging::init();
     trap::init();

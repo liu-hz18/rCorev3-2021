@@ -18,6 +18,7 @@ use buddy_system_allocator::LockedHeap;
 pub use console::{STDIN, STDOUT};
 use syscall::*;
 
+// 在应用中使能动态内存分配
 const USER_HEAP_SIZE: usize = 16384;
 
 static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
@@ -95,6 +96,7 @@ pub fn fork() -> isize {
 pub fn exec(path: &str) -> isize {
     sys_exec(path)
 }
+// 等待任意一个子进程结束
 pub fn wait(exit_code: &mut i32) -> isize {
     sys_waitpid(-1, exit_code as *mut _)
 }
