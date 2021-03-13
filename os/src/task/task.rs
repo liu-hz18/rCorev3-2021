@@ -9,7 +9,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 use core::cmp::{Ordering};
-use crate::fs::{File, Stdin, Stdout};
+use crate::fs::{File, Stdin, Stdout, MailBox};
 
 // 进程控制块
 // 线程成为CPU（也称处理器）调度（scheduling）和分派（switch）的对象
@@ -46,6 +46,7 @@ pub struct TaskControlBlockInner {
     // Option 使得我们可以区分一个文件描述符当前是否空闲，当它是 None 的时候是空闲的，而 Some 则代表它已被占用
     // Arc 首先提供了共享引用能力, 可能会有多个进程共享同一个文件对它进行读写
     // dyn 关键字表明 Arc 里面的类型实现了 File/Send/Sync 三个 Trait, 等到运行时才能知道它的具体类型 (Rust 多态)
+    pub mail_box: MailBox,
 }
 // 子进程的进程控制块并不会被直接放到父进程控制块下面，因为子进程完全有可能在父进程退出后仍然存在
 // 因此进程控制块的本体是被放到内核堆上面的，对于它的一切访问都是通过智能指针 Arc/Weak 来进行的
@@ -77,9 +78,6 @@ impl TaskControlBlockInner {
     }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut() // T=TrapContext here.
-    }
-    pub fn get_task_pass(&self) -> isize {
-        BIG_STRIDE / self.task_priority
     }
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
@@ -158,6 +156,7 @@ impl TaskControlBlock {
                     // 2 -> stderr
                     Some(Arc::new(Stdout)), // 文件描述符为 2 的标准错误输出
                 ],
+                mail_box: MailBox::new(),
                 // 在我们的实现中并不区分标准输出和标准错误输出
                 // 进程打开一个文件的时候，内核总是会将文件分配到该进程文件描述符表中 最小的 空闲位置 (最先匹配算法)
             }),
@@ -239,6 +238,10 @@ impl TaskControlBlock {
                 new_fd_table.push(None);
             }
         }
+        let mut new_mail_box = MailBox::new();
+        for mail in parent_inner.mail_box.packets.iter() {
+            new_mail_box.push(*mail);
+        }
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
@@ -258,6 +261,8 @@ impl TaskControlBlock {
                 exit_code: 0,
 
                 fd_table: new_fd_table,
+
+                mail_box: new_mail_box,
             }),
         });
         // 注意父子进程关系的维护

@@ -1,9 +1,7 @@
 use super::File;
 use alloc::sync::{Arc, Weak};
 use spin::Mutex;
-use crate::mm::{
-    UserBuffer,
-};
+use crate::mm::{UserBuffer};
 use crate::task::suspend_current_and_run_next;
 
 // 管道看成一个有 一定缓冲区大小 的 字节[队列]

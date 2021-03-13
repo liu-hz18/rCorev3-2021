@@ -174,7 +174,7 @@ pub fn sys_waitpid_blocking(
     // find a child process
     // ---- hold current PCB lock
     {
-        let mut inner = task.acquire_inner_lock();
+        let inner = task.acquire_inner_lock();
         // 可能的错误:
         //  1. 进程无未结束子进程
         //  2. pid 非法或者指定的不是该进程的子进程。

@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use spin::Mutex;
 use lazy_static::*;
 use core::cmp::Reverse;
-
+use crate::mm::{UserBuffer};
 // 任务管理器
 // 这里，任务指的就是进程
 pub struct TaskManager {
@@ -27,6 +27,18 @@ impl TaskManager {
     }
     pub fn running_num(&self) -> usize {
         self.ready_queue.len()
+    }
+    pub fn set_task_mail(&mut self, pid: usize, buffer: UserBuffer) -> isize {
+        let mut pair = self.ready_queue.iter_mut().enumerate().find(
+            |(_, p)| {
+                pid as usize == p.getpid()
+            }
+        );
+        if let Some((_idx, task)) = pair {
+            task.acquire_inner_lock().mail_box.write(buffer) as isize
+        } else {
+            -1
+        }
     }
 }
 
@@ -52,11 +64,27 @@ impl StrideTaskManager {
     pub fn running_num(&self) -> usize {
         self.ready_queue.len()
     }
+    pub fn set_task_mail(&mut self, pid: usize, buffer: UserBuffer) -> isize {
+        let mut pair = self.ready_queue.iter().enumerate().find(
+            |(_, p)| {
+                pid as usize == p.0.getpid()
+            }
+        );
+        if let Some((_idx, task)) = pair {
+            task.0.acquire_inner_lock().mail_box.write(buffer) as isize
+        } else {
+            -1
+        }
+    }
 }
 
 lazy_static! {
     // pub static ref TASK_MANAGER: Mutex<StrideTaskManager> = Mutex::new(StrideTaskManager::new());
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
+}
+
+pub fn set_task_mail(pid: usize, buffer: UserBuffer) -> isize {
+    TASK_MANAGER.lock().set_task_mail(pid, buffer)
 }
 
 pub fn add_task(task: Arc<TaskControlBlock>) {

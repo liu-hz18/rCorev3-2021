@@ -15,6 +15,8 @@ const SYSCALL_SPAWN: usize = 400;
 // 文件相关
 const SYSCALL_PIPE: usize = 59;
 const SYSCALL_CLOSE: usize = 57;
+const SYSCALL_MAIL_READ: usize = 401;
+const SYSCALL_MAIL_WRITE: usize = 402;
 
 mod fs;
 mod process;
@@ -41,6 +43,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_SPAWN => sys_spawn(args[0] as *const u8),
         SYSCALL_CLOSE => sys_close(args[0]),
         SYSCALL_PIPE => sys_pipe(args[0] as *mut usize),
+        SYSCALL_MAIL_READ => sys_mail_read(args[0] as *mut u8, args[1] as usize),
+        SYSCALL_MAIL_WRITE => sys_mail_write(args[0] as usize, args[1] as *mut u8, args[2] as usize),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

@@ -135,3 +135,17 @@ pub fn sys_pipe(pipe: &mut [usize]) -> isize {
 pub fn sys_close(fd: usize) -> isize {
     syscall(SYSCALL_CLOSE, [fd, 0, 0])
 }
+
+pub fn sys_mail_read(buffer: &mut [u8]) -> isize {
+    syscall(
+        SYSCALL_MAIL_READ,
+        [buffer.as_ptr() as usize, buffer.len(), 0],
+    )
+}
+
+pub fn sys_mail_write(pid: usize, buffer: &[u8]) -> isize {
+    syscall(
+        SYSCALL_MAIL_WRITE,
+        [pid, buffer.as_ptr() as usize, buffer.len()],
+    )
+}

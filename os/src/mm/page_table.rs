@@ -236,6 +236,12 @@ pub fn virtual_addr_range_printable(token: usize, ptr: *const u8, len: usize) ->
     )
 }
 
+pub fn virtual_addr_range_writable(token: usize, ptr: *const u8, len: usize) -> bool {
+    let start_writable = virtual_addr_writable(token, ptr as usize);
+    let end_writable = virtual_addr_writable(token, ptr as usize + len);
+    start_writable && end_writable
+}
+
 pub fn translated_virtual_ptr<T>(
     token: usize,
     v_ptr: *mut T,

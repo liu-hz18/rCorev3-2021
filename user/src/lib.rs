@@ -108,3 +108,9 @@ pub fn spawn(path: &str) -> isize {
 }
 pub fn close(fd: usize) -> isize { sys_close(fd) }
 pub fn pipe(pipe_fd: &mut [usize]) -> isize { sys_pipe(pipe_fd) }
+pub fn mail_read(buf: &mut [u8]) -> isize {
+    sys_mail_read(buf)
+}
+pub fn mail_write(pid: usize, buf: &[u8]) -> isize {
+    sys_mail_write(pid, buf)
+}

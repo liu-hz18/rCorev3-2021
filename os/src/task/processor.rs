@@ -116,7 +116,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn schedule(switched_task_cx_ptr2: *const usize) {
     // 切换到 idle 执行流并开启新一轮的任务调度
     // 我们将跳转到 Processor::run 中 __switch 返回之后的位置，也即开启了下一轮循环
-    let mut idle_task_cx_ptr2 = PROCESSOR.get_idle_task_cx_ptr2();
+    let idle_task_cx_ptr2 = PROCESSOR.get_idle_task_cx_ptr2();
     unsafe {
         __switch(
             switched_task_cx_ptr2,

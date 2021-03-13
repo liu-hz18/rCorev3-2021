@@ -25,7 +25,7 @@ pub use processor::{
     schedule,
     set_task_priority,
 };
-pub use manager::{add_task, running_task_num};
+pub use manager::{add_task, running_task_num, set_task_mail};
 pub use pid::{PidHandle, pid_alloc, KernelStack};
 
 // 暂停当前任务并切换到下一个任务
