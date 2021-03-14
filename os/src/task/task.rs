@@ -1,5 +1,11 @@
 // 把应用程序的一个计算阶段的执行过程（也是一段执行流）称为一个 任务
-use crate::mm::{MemorySet, PhysPageNum, KERNEL_SPACE, VirtAddr};
+use crate::mm::{
+    MemorySet,
+    PhysPageNum,
+    KERNEL_SPACE,
+    VirtAddr,
+    translated_refmut
+};
 use crate::trap::{TrapContext, trap_handler};
 use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY, TRAP_CONTEXT};
 use super::TaskContext;
@@ -7,6 +13,7 @@ use super::{PidHandle, pid_alloc, KernelStack};
 use alloc::sync::{Weak, Arc};
 use alloc::vec;
 use alloc::vec::Vec;
+use alloc::string::String;
 use spin::{Mutex, MutexGuard};
 use core::cmp::{Ordering};
 use crate::fs::{File, Stdin, Stdout, MailBox};
@@ -178,14 +185,35 @@ impl TaskControlBlock {
         task_control_block
     }
     // 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
-    pub fn exec(&self, elf_data: &[u8]) {
+    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
         // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, mut user_sp, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-
+        // push arguments on user stack
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;
+        let mut argv: Vec<_> = (0..=args.len())
+            .map(|arg| {
+                translated_refmut(
+                    memory_set.token(),
+                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize
+                )
+            })
+            .collect();
+        *argv[args.len()] = 0;
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            for c in args[i].as_bytes() {
+                *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+        }
         // **** hold current PCB lock
         let mut inner = self.acquire_inner_lock();
         // substitute memory_set
@@ -196,15 +224,16 @@ impl TaskControlBlock {
         inner.trap_cx_ppn = trap_cx_ppn;
         // initialize trap_cx
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化，这样才能正常实现 Trap 机制
-        let trap_cx = inner.get_trap_cx();
-        drop(inner);
-        *trap_cx = TrapContext::app_init_context(
+        let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
             KERNEL_SPACE.lock().token(),
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        trap_cx.x[10] = args.len();
+        trap_cx.x[11] = argv_base;
+        *inner.get_trap_cx() = trap_cx;
         // **** release current PCB lock
     }
     // 实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程

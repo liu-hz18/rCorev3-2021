@@ -7,6 +7,10 @@ DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 DEBUG_KERNEL_ELF := target/$(TARGET)/debug/os
 DEBUG_KERNEL_BIN := $(DEBUG_KERNEL_ELF).bin
 
+# file sys
+FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
+SDCARD := /dev/sdb
+
 # BOARD
 BOARD ?= qemu
 SBI ?= rustsbi
@@ -44,9 +48,9 @@ CHAPTER := 6
 # Disassembly
 DISASM ?= -x -D
 
-build: env $(KERNEL_BIN)
+build: env $(KERNEL_BIN) $(FS_IMG)
 
-build-debug: env $(DEBUG_KERNEL_BIN)
+build-debug: env $(DEBUG_KERNEL_BIN) $(FS_IMG)
 
 env:
 	(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add $(TARGET)
@@ -59,6 +63,12 @@ $(KERNEL_BIN): kernel
 
 $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
+
+$(FS_IMG): $(APPS)
+	@cd ../user && make build
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
+
+$(APPS):
 
 kernel:
 	@cd ../user && make all CHAPTER=$(CHAPTER)
@@ -118,7 +128,9 @@ ifeq ($(BOARD),qemu)
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
-		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
+		-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+        -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 else
 	@cp $(BOOTLOADER) $(BOOTLOADER).copy
 	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=$(K210_BOOTLOADER_SIZE) seek=1

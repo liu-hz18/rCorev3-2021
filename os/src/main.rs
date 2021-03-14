@@ -22,11 +22,11 @@ mod logging;
 mod syscall;
 mod trap;
 mod task;
-mod loader;
 mod config;
 mod timer;
 mod mm;
 mod fs;
+mod drivers;
 
 // 将同目录下的汇编代码 entry.asm 转化为字符串并通过 global_asm! 宏嵌入到代码中
 global_asm!(include_str!("entry.asm"));
@@ -80,12 +80,13 @@ pub fn rust_main() -> ! {
     task::add_initproc();
     println!("[kernel] after initproc!");
 
-    logging::init();
+    // logging::init();
     trap::init();
 
     trap::enable_timer_interrupt(); // 设置了 sie.stie 使得 S 特权级时钟中断不会被屏蔽
     timer::set_next_trigger(); // 设置第一个 10ms 的计时器
-    loader::list_apps();
+    fs::list_apps();
+    task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

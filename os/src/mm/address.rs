@@ -128,6 +128,11 @@ impl PhysAddr {
             (self.0 as *mut T).as_mut().unwrap()
         }
     }
+    pub fn get_ref<T>(&self) -> &'static T {
+        unsafe {
+            (self.0 as *const T).as_ref().unwrap()
+        }
+    }
 }
 
 // S, U态 都是虚拟地址了
@@ -161,6 +166,11 @@ pub trait StepByOne {
     fn step(&mut self);
 }
 impl StepByOne for VirtPageNum {
+    fn step(&mut self) {
+        self.0 += 1;
+    }
+}
+impl StepByOne for PhysPageNum {
     fn step(&mut self) {
         self.0 += 1;
     }

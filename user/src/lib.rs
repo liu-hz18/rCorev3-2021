@@ -48,6 +48,16 @@ fn main() -> i32 {
     panic!("Cannot find main!");
 }
 
+bitflags! {
+    pub struct OpenFlags: u32 {
+        const RDONLY = 0;
+        const WRONLY = 1 << 0;
+        const RDWR = 1 << 1;
+        const CREATE = 1 << 9;
+        const TRUNC = 1 << 10;
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct TimeVal {
@@ -60,6 +70,45 @@ impl TimeVal {
         TimeVal { sec: 0, usec: 0 }
     }
 }
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct Stat {
+    /// ID of device containing file
+    pub dev: u64,
+    /// inode number
+    pub ino: u64,
+    /// file type and mode
+    pub mode: StatMode,
+    /// number of hard links
+    pub nlink: u32,
+    /// unused pad
+    pad: [u64; 7],
+}
+
+impl Stat {
+    pub fn new() -> Self {
+        Stat {
+            dev: 0,
+            ino: 0,
+            mode: StatMode::NULL,
+            nlink: 0,
+            pad: [0; 7],
+        }
+    }
+}
+
+bitflags! {
+    pub struct StatMode: u32 {
+        const NULL  = 0;
+        /// directory
+        const DIR   = 0o040000;
+        /// ordinary regular file
+        const FILE  = 0o100000;
+    }
+}
+
+const AT_FDCWD: isize = -100;
 
 pub fn write(fd: usize, buf: &[u8]) -> isize { sys_write(fd, buf) }
 pub fn read(fd: usize, buf: &mut [u8]) -> isize { sys_read(fd, buf) }
@@ -94,8 +143,10 @@ pub fn fork() -> isize {
     sys_fork()
 }
 pub fn exec(path: &str) -> isize {
-    sys_exec(path)
+    sys_exec(path, &[0 as *const u8])
 }
+// pub fn exec(path: &str, args: &[*const u8]) -> isize { sys_exec(path, args) }
+
 // 等待任意一个子进程结束
 pub fn wait(exit_code: &mut i32) -> isize {
     sys_waitpid(-1, exit_code as *mut _)
@@ -113,4 +164,17 @@ pub fn mail_read(buf: &mut [u8]) -> isize {
 }
 pub fn mail_write(pid: usize, buf: &[u8]) -> isize {
     sys_mail_write(pid, buf)
+}
+pub fn dup(fd: usize) -> isize { sys_dup(fd) }
+pub fn open(path: &str, flags: OpenFlags) -> isize {
+    sys_openat(AT_FDCWD as usize, path, flags.bits, OpenFlags::RDWR.bits)
+}
+pub fn link(old_path: &str, new_path: &str) -> isize {
+    sys_linkat(AT_FDCWD as usize, old_path, AT_FDCWD as usize, new_path, 0)
+}
+pub fn unlink(path: &str) -> isize {
+    sys_unlinkat(AT_FDCWD as usize, path, 0)
+}
+pub fn fstat(fd: usize, st: &Stat) -> isize {
+    sys_fstat(fd, st)
 }

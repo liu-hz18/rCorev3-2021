@@ -1,5 +1,6 @@
-use super::{TimeVal};
+use super::{Stat, TimeVal};
 
+const SYSCALL_DUP: usize = 24;
 const SYSCALL_OPENAT: usize = 56;
 const SYSCALL_CLOSE: usize = 57;
 const SYSCALL_PIPE: usize = 59;
@@ -34,6 +35,20 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
             : "{x10}" (args[0]), "{x11}" (args[1]), "{x12}" (args[2]), "{x17}" (id) // input operands
             : "memory" // clobbers, 告诉编译器在执行嵌入汇编代码中的时候会修改内存, 防止编译器在不知情的情况下误优化
             : "volatile" // options, 嵌入汇编代码保持原样放到最终构建的可执行文件中
+        );
+    }
+    ret
+}
+
+fn syscall5(id: usize, args: [usize; 5]) -> isize {
+    let mut ret: isize;
+    unsafe {
+        llvm_asm!("ecall"
+            : "={x10}" (ret)
+            : "{x10}" (args[0]), "{x11}" (args[1]), "{x12}" (args[2]), "{x13}" (args[3]),
+                "{x14}" (args[4]), "{x17}" (id)
+            : "memory"
+            : "volatile"
         );
     }
     ret
@@ -110,8 +125,8 @@ pub fn sys_fork() -> isize {
 /// 参数：path 给出了要加载的可执行文件的名字；
 /// 返回值：如果出错的话（如找不到名字相符的可执行文件）则返回 -1，否则不应该返回。
 /// syscall ID：221
-pub fn sys_exec(path: &str) -> isize {
-    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, 0, 0])
+pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
+    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, args.as_ptr() as usize, 0])
 }
 
 /// 功能：当前进程等待一个子进程变为僵尸进程，回收其全部资源并收集其返回值。
@@ -148,4 +163,48 @@ pub fn sys_mail_write(pid: usize, buffer: &[u8]) -> isize {
         SYSCALL_MAIL_WRITE,
         [pid, buffer.as_ptr() as usize, buffer.len()],
     )
+}
+
+pub fn sys_dup(fd: usize) -> isize {
+    syscall(SYSCALL_DUP, [fd, 0, 0])
+}
+
+pub fn sys_openat(dirfd: usize, path: &str, flags: u32, mode: u32) -> isize {
+    syscall5(
+        SYSCALL_OPENAT,
+        [
+            dirfd,
+            path.as_ptr() as usize,
+            flags as usize,
+            mode as usize,
+            0,
+        ],
+    )
+}
+
+pub fn sys_linkat(
+    old_dirfd: usize,
+    old_path: &str,
+    new_dirfd: usize,
+    new_path: &str,
+    flags: usize,
+) -> isize {
+    syscall5(
+        SYSCALL_LINKAT,
+        [
+            old_dirfd,
+            old_path.as_ptr() as usize,
+            new_dirfd,
+            new_path.as_ptr() as usize,
+            flags,
+        ],
+    )
+}
+
+pub fn sys_unlinkat(dirfd: usize, path: &str, flags: usize) -> isize {
+    syscall(SYSCALL_UNLINKAT, [dirfd, path.as_ptr() as usize, flags])
+}
+
+pub fn sys_fstat(fd: usize, st: &Stat) -> isize {
+    syscall(SYSCALL_FSTAT, [fd, st as *const _ as usize, 0])
 }

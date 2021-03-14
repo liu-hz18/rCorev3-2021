@@ -13,10 +13,16 @@ use crate::timer::{get_time_sys, TimeVal};
 use crate::mm::{
     translated_str,
     translated_refmut,
+    translated_ref,
     virtual_addr_writable
 };
-use crate::loader::get_app_data_by_name;
+use crate::fs::{
+    open_file,
+    OpenFlags,
+};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use alloc::string::String;
 
 // 打印退出的应用程序的返回值并同样调用 run_next_app 切换到下一个应用程序
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -93,13 +99,25 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
-pub fn sys_exec(path: *const u8) -> isize {
+pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    let mut args_vec: Vec<String> = Vec::new();
+    loop {
+        let arg_str_ptr = *translated_ref(token, args);
+        if arg_str_ptr == 0 {
+            break;
+        }
+        args_vec.push(translated_str(token, arg_str_ptr as *const u8));
+        unsafe { args = args.add(1); }
+    }
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(data);
-        0
+        let argc = args_vec.len();
+        task.exec(all_data.as_slice(), args_vec);
+        // return argc because cx.x[10] will be covered with it later
+        argc as isize
     } else {
         -1
     }
@@ -231,10 +249,12 @@ pub fn sys_waitpid_blocking(
 // 错误：
 //  1. 无效的文件名。
 //  2. 进程池满/内存不足等资源错误。(暂不考虑)
-pub fn sys_spawn(file: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     let token = current_user_token();
-    let path = translated_str(token, file);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    let path = translated_str(token, path);
+    let mut args_vec: Vec<String> = Vec::new();
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
         let current_task = current_task().unwrap();
         let new_task = current_task.fork();
         let new_pid = new_task.pid.0;
@@ -243,9 +263,8 @@ pub fn sys_spawn(file: *const u8) -> isize {
         // we do not have to move to next instruction since we have done it before
         // for child process, fork returns 0
         trap_cx.x[10] = 0;
-        // exec file
-        new_task.exec(data);
-        // add new task to scheduler
+        let argc = args_vec.len();
+        new_task.exec(all_data.as_slice(), args_vec);
         add_task(new_task);
         new_pid as isize
     } else {

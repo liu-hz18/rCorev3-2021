@@ -29,7 +29,7 @@ impl TaskManager {
         self.ready_queue.len()
     }
     pub fn set_task_mail(&mut self, pid: usize, buffer: UserBuffer) -> isize {
-        let mut pair = self.ready_queue.iter_mut().enumerate().find(
+        let pair = self.ready_queue.iter_mut().enumerate().find(
             |(_, p)| {
                 pid as usize == p.getpid()
             }
@@ -65,7 +65,7 @@ impl StrideTaskManager {
         self.ready_queue.len()
     }
     pub fn set_task_mail(&mut self, pid: usize, buffer: UserBuffer) -> isize {
-        let mut pair = self.ready_queue.iter().enumerate().find(
+        let pair = self.ready_queue.iter().enumerate().find(
             |(_, p)| {
                 pid as usize == p.0.getpid()
             }

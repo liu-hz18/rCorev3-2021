@@ -1,6 +1,44 @@
-use crate::mm::{UserBuffer, translated_byte_buffer, translated_refmut, virtual_addr_range_printable, virtual_addr_range_writable};
+use crate::mm::{
+    UserBuffer,
+    translated_byte_buffer,
+    translated_refmut,
+    virtual_addr_range_printable,
+    virtual_addr_range_writable,
+    translated_str
+};
 use crate::task::{current_user_token, current_task_id, current_task, set_task_mail};
-use crate::fs::{make_pipe};
+use crate::fs::{make_pipe, OpenFlags, open_file};
+use alloc::sync::Arc;
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct Stat {
+    pub dev: u64, // ID of device containing file
+    pub ino: u64, // inode number
+    pub mode: StatMode, // file type and mode
+    pub nlink: u32, // number of hard links
+    pad: [u64; 7], // unused pad
+}
+
+impl Stat {
+    pub fn new() -> Self {
+        Stat {
+            dev: 0,
+            ino: 0,
+            mode: StatMode::NULL,
+            nlink: 0,
+            pad: [0; 7],
+        }
+    }
+}
+
+bitflags! {
+    pub struct StatMode: u32 {
+        const NULL  = 0;
+        const DIR   = 0o040000; // directory
+        const FILE  = 0o100000; // ordinary regular file
+    }
+}
 
 // 由于内核和应用地址空间的隔离， sys_write 不再能够直接访问位于应用空间中的数据，而需要手动查页表才能知道那些 数据被放置在哪些物理页帧上并进行访问
 // 安全检查：sys_write 仅能输出位于程序本身内存空间内的数据，否则报错
@@ -16,6 +54,9 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     // 在当前进程的文件描述符表中通过文件描述符找到某个文件
     // 无需关心文件具体的类型，只要知道它一定实现了 File Trait 的 read/write 方法即可
     if let Some(file) = &inner.fd_table[fd] {
+        if !file.writable() {
+            return -1;
+        }
         let file = file.clone();
         // release Task lock manually to avoid deadlock
         drop(inner);
@@ -43,6 +84,9 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         return -1;
     }
     if let Some(file) = &inner.fd_table[fd] {
+        if !file.readable() {
+            return -1;
+        }
         let file = file.clone();
         // release Task lock manually to avoid deadlock
         drop(inner);
@@ -55,11 +99,40 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
+/// 功能：打开一个标准文件，并返回可以访问它的文件描述符
+// _dirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)。可以忽略。
+// path: 描述要打开的文件的文件名
+// flags: 描述打开文件的标志
+// mode: 仅在创建文件时有用，表示传建文件的访问权限，为了简单，本次实验中可以忽略
+pub fn sys_openat(_dirfd: usize, path: *const u8, flags: u32, _mode: u32) -> isize {
+    // 有 create 标志但文件存在时，忽略 create 标志，直接打开文件
+    // 如果出现了错误则返回 -1，否则返回可以访问给定文件的文件描述符
+    // 可能的错误:
+    // 1. 文件不存在且无 create 标志
+    // 2. 标志非法（低两位为 0x3）
+    // 3. 打开文件数量达到上限
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    if let Some(inode) = open_file(
+        path.as_str(),
+        OpenFlags::from_bits(flags).unwrap()
+    ) {
+        let mut inner = task.acquire_inner_lock();
+        let fd = inner.alloc_fd();
+        inner.fd_table[fd] = Some(inode);
+        fd as isize
+    } else {
+        -1
+    }
+}
+
 /// 功能：当前进程关闭一个文件。
 /// 参数：fd 表示要关闭的文件的文件描述符。
 /// 返回值：如果成功关闭则返回 0 ，否则返回 -1 。可能的出错原因：传入的文件描述符并不对应一个打开的文件。
 /// syscall ID：57
 /// 只有当一个管道的所有读端/写端都被关闭之后，管道占用的资源才会被回收，因此我们需要通过关闭文件的系统调用 sys_close 来尽可能早的关闭之后不再用到的读端和写端
+/// 可能的错误: 传入的文件描述符 fd 并未被打开或者为保留句柄
 pub fn sys_close(fd: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.acquire_inner_lock();
@@ -97,6 +170,20 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
     *translated_refmut(token, pipe) = read_fd;
     *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
     0
+}
+
+pub fn sys_dup(fd: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.acquire_inner_lock();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }
+    let new_fd = inner.alloc_fd();
+    inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
+    new_fd as isize
 }
 
 // 基于邮箱的进程间通信
@@ -150,4 +237,38 @@ pub fn sys_mail_write(pid: usize, buffer: *mut u8, len: usize) -> isize {
         let mut inner = task.acquire_inner_lock();
         inner.mail_box.write(buffer) as isize
     }
+}
+
+// 创建一个文件的一个硬链接
+// olddirfd，newdirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)，可以忽略
+// flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略
+// oldpath：原有文件路径
+// newpath: 新的链接文件路径
+// 为了方便，不考虑新文件路径已经存在的情况（属于未定义行为），除非链接同名文件
+// 返回值: 果出现了错误则返回 -1，否则返回 0
+// 可能的错误: 链接同名文件
+pub fn sys_linkat(_olddirfd: i32, oldpath: *const u8, _newdirfd: i32, newpath: *const u8, _flags: u32) -> isize {
+    0
+}
+
+// 取消一个文件路径到文件的链接
+// dirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)，可以忽略
+// flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略
+// path：文件路径
+// 为了方便，不考虑使用 unlink 彻底删除文件的情况
+// 返回值：如果出现了错误则返回 -1，否则返回 0。
+// 可能的错误: 文件不存在
+pub fn sys_unlinkat(_dirfd: i32, path: *const u8, _flags: u32) -> isize {
+    0
+}
+
+// 获取文件状态
+// fd: 文件描述符
+// st: 文件状态结构体
+// 如果出现了错误则返回 -1，否则返回 0
+// 可能的错误:
+//  1. fd 无效
+//  2. st 地址非法
+pub fn sys_fstat(fd: i32, st: *mut Stat) -> isize {
+    0
 }

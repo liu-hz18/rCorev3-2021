@@ -65,7 +65,7 @@ pub fn trap_handler() -> ! {
             // 这样在 __restore 的时候 sepc 在恢复之后就会指向 ecall 的下一条指令
             // get system call return value
             // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值
-            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14]]) as usize;
             // cx is changed during sys_exec, so we have to call it again
             // 对于系统调用 sys_exec 来说，一旦调用它之后，我们会发现 trap_handler 原来上下文中的 cx 失效了
             // 因为它是用来访问 之前地址空间 中 Trap 上下文被保存在的那个物理页帧的, 而现在它已经被回收掉了

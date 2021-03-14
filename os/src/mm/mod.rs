@@ -4,11 +4,12 @@ mod frame_allocator;
 mod page_table;
 mod memory_set;
 
-use page_table::{PageTable, PTEFlags};
-pub use address::{VPNRange, StepByOne};
-pub use address::{PhysAddr, VirtAddr, PhysPageNum, VirtPageNum};
-pub use frame_allocator::{FrameTracker, frame_alloc, usable_frames};
+pub use address::{VPNRange, StepByOne, PhysAddr, VirtAddr, PhysPageNum, VirtPageNum};
+pub use frame_allocator::{FrameTracker, frame_alloc, frame_dealloc, usable_frames};
+pub use memory_set::{MemorySet, KERNEL_SPACE, MapPermission, MapArea, MapType, kernel_token, remap_test};
 pub use page_table::{
+    PageTable,
+    PTEFlags,
     PageTableEntry,
     translated_byte_buffer,
     translated_virtual_ptr,
@@ -17,12 +18,11 @@ pub use page_table::{
     virtual_addr_range_printable,
     virtual_addr_range_writable,
     translated_str,
+    translated_ref,
     translated_refmut,
     UserBuffer,
     UserBufferIterator,
 };
-pub use memory_set::{MemorySet, KERNEL_SPACE, MapPermission, MapArea, MapType};
-pub use memory_set::remap_test;
 
 pub fn init() {
     // 全局动态内存分配器的初始化

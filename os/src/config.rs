@@ -22,3 +22,8 @@ pub const CLOCK_FREQ: usize = 12500000;
 // Stride 调度
 pub const BIG_STRIDE: isize = 0x7FFFFFFF;
 pub const TASK_INIT_PRIORITY: isize = 16;
+
+// file system
+pub const MMIO: &[(usize, usize)] = &[
+    (0x10000000, 0x10000),
+];

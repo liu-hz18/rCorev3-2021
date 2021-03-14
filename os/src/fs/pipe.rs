@@ -190,4 +190,6 @@ impl File for Pipe {
             }
         }
     }
+    fn readable(&self) -> bool { self.readable }
+    fn writable(&self) -> bool { self.writable }
 }
