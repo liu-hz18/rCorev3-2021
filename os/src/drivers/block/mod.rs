@@ -12,6 +12,7 @@ lazy_static! {
 
 #[allow(unused)]
 pub fn block_device_test() {
+    println!("[kernel] block device test running.");
     let block_device = BLOCK_DEVICE.clone();
     let mut write_buffer = [0u8; 512];
     let mut read_buffer = [0u8; 512];
@@ -21,5 +22,5 @@ pub fn block_device_test() {
         block_device.read_block(i as usize, &mut read_buffer);
         assert_eq!(write_buffer, read_buffer);
     }
-    println!("block device test passed!");
+    println!("\r[kernel] block device test passed!");
 }

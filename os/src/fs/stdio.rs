@@ -11,6 +11,8 @@ pub struct Stdout;
 impl File for Stdin {
     fn readable(&self) -> bool { true }
     fn writable(&self) -> bool { false }
+    fn nlink(&self) -> usize { 1 }
+    fn inode_id(&self) -> usize { 0 }
     fn read(&self, mut user_buf: UserBuffer) -> usize {
         // 目前每次仅支持读入一个字符
         assert_eq!(user_buf.len(), 1);
@@ -38,6 +40,8 @@ impl File for Stdin {
 impl File for Stdout {
     fn readable(&self) -> bool { false }
     fn writable(&self) -> bool { true }
+    fn nlink(&self) -> usize { 1 }
+    fn inode_id(&self) -> usize { 0 }
     fn read(&self, _user_buf: UserBuffer) -> usize{
         panic!("Cannot read from stdout!");
     }

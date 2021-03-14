@@ -4,20 +4,22 @@ use crate::mm::{
     translated_refmut,
     virtual_addr_range_printable,
     virtual_addr_range_writable,
-    translated_str
+    virtual_addr_writable,
+    translated_str,
+    translated_virtual_ptr
 };
 use crate::task::{current_user_token, current_task_id, current_task, set_task_mail};
-use crate::fs::{make_pipe, OpenFlags, open_file};
+use crate::fs::{make_pipe, OpenFlags, open_file, link, unlink, OSInode};
 use alloc::sync::Arc;
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct Stat {
-    pub dev: u64, // ID of device containing file
-    pub ino: u64, // inode number
-    pub mode: StatMode, // file type and mode
-    pub nlink: u32, // number of hard links
-    pad: [u64; 7], // unused pad
+    pub dev: u64, // ID of device containing file, 文件所在磁盘驱动器号, 暂时不考虑
+    pub ino: u64, // inode number, inode 文件所在 inode 编号
+    pub mode: StatMode, // file type and mode, 文件类型
+    pub nlink: u32, // number of hard links, 硬链接数量，初始为1
+    pad: [u64; 7], // unused pad, 无需考虑，为了兼容性设计
 }
 
 impl Stat {
@@ -26,7 +28,7 @@ impl Stat {
             dev: 0,
             ino: 0,
             mode: StatMode::NULL,
-            nlink: 0,
+            nlink: 1,
             pad: [0; 7],
         }
     }
@@ -70,7 +72,6 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
             UserBuffer::new(buffers)
         ) as isize
     } else {
-        println!("[kernel] Unsupported fd in sys_write!");
         -1
     }
 }
@@ -90,11 +91,11 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         let file = file.clone();
         // release Task lock manually to avoid deadlock
         drop(inner);
-        file.read(
+        let ret = file.read(
             UserBuffer::new(translated_byte_buffer(token, buf, len))
-        ) as isize
+        ) as isize;
+        ret
     } else {
-        println!("[kernel] Unsupported fd in sys_read!");
         -1
     }
 }
@@ -172,16 +173,27 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
     0
 }
 
+// Backup 重定向功能
+// 在应用执行之前，我们就要对应用进程的文件描述符表进行某种替换
+// 以输出为例，我们需要提前打开文件并用这个文件来替换掉应用文件描述符表位置 1 处的标准输出，这就完成了所谓的重定向
+/// 功能：将进程中一个已经打开的文件复制一份并分配到一个新的文件描述符中。
+/// 参数：fd 表示进程中一个已经打开的文件的文件描述符。
+/// 返回值：如果出现了错误则返回 -1，否则能够访问已打开文件的新文件描述符。
+/// 可能的错误原因是：传入的 fd 并不对应一个合法的已打开文件。
+/// syscall ID：24
 pub fn sys_dup(fd: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.acquire_inner_lock();
+    // 检查传入 fd 的合法性
     if fd >= inner.fd_table.len() {
         return -1;
     }
     if inner.fd_table[fd].is_none() {
         return -1;
     }
+    // 在文件描述符表中分配一个新的文件描述符
     let new_fd = inner.alloc_fd();
+    // 保存 fd 指向的已打开文件的一份拷贝即可
     inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
     new_fd as isize
 }
@@ -233,13 +245,14 @@ pub fn sys_mail_write(pid: usize, buffer: *mut u8, len: usize) -> isize {
     if pid != current_task_id() {
         set_task_mail(pid, buffer)
     } else {
-        let mut task = current_task().unwrap();
+        let task = current_task().unwrap();
         let mut inner = task.acquire_inner_lock();
         inner.mail_box.write(buffer) as isize
     }
 }
 
 // 创建一个文件的一个硬链接
+// 硬链接的核心: 多个文件名指向同一个inode
 // olddirfd，newdirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)，可以忽略
 // flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略
 // oldpath：原有文件路径
@@ -248,7 +261,10 @@ pub fn sys_mail_write(pid: usize, buffer: *mut u8, len: usize) -> isize {
 // 返回值: 果出现了错误则返回 -1，否则返回 0
 // 可能的错误: 链接同名文件
 pub fn sys_linkat(_olddirfd: i32, oldpath: *const u8, _newdirfd: i32, newpath: *const u8, _flags: u32) -> isize {
-    0
+    let token = current_user_token();
+    let old_path = translated_str(token, oldpath);
+    let new_path = translated_str(token, newpath);
+    link(&old_path, &new_path)
 }
 
 // 取消一个文件路径到文件的链接
@@ -259,7 +275,9 @@ pub fn sys_linkat(_olddirfd: i32, oldpath: *const u8, _newdirfd: i32, newpath: *
 // 返回值：如果出现了错误则返回 -1，否则返回 0。
 // 可能的错误: 文件不存在
 pub fn sys_unlinkat(_dirfd: i32, path: *const u8, _flags: u32) -> isize {
-    0
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    unlink(&path)
 }
 
 // 获取文件状态
@@ -269,6 +287,29 @@ pub fn sys_unlinkat(_dirfd: i32, path: *const u8, _flags: u32) -> isize {
 // 可能的错误:
 //  1. fd 无效
 //  2. st 地址非法
-pub fn sys_fstat(fd: i32, st: *mut Stat) -> isize {
-    0
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let token = current_user_token();
+    // check st address
+    if !virtual_addr_writable(token, st as usize) {
+        return -1 as isize;
+    }
+    let task = current_task().unwrap();
+    let inner = task.acquire_inner_lock();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        unsafe {
+            let st_ptr = translated_virtual_ptr(token, st);
+            // TODO: 维护并获取file的状态
+            if let Some(pa_st) = st_ptr.as_mut() {
+                (*pa_st).ino = file.inode_id() as u64;
+                (*pa_st).mode = StatMode::FILE;
+                (*pa_st).nlink = file.nlink() as u32;
+            }
+        }
+        0
+    } else {
+        -1
+    }
 }

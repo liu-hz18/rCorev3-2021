@@ -43,7 +43,7 @@ READOBJ := rust-readobj -all
 ADDR := 0x8002000c
 
 
-CHAPTER := 6
+CHAPTER := 7
 
 # Disassembly
 DISASM ?= -x -D
@@ -64,13 +64,10 @@ $(KERNEL_BIN): kernel
 $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
 
-$(FS_IMG): $(APPS)
-	@cd ../user && make build
+$(FS_IMG):
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
 
-$(APPS):
-
-kernel:
+kernel: 
 	@cd ../user && make all CHAPTER=$(CHAPTER)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
@@ -84,17 +81,31 @@ kernel-debug:
 	@rm src/linker.ld
 
 clean:
+	@cd ../easy-fs && cargo clean
+	@cd ../easy-fs-fuse && cargo clean
 	@cd ../user && make clean
 	@cargo clean
 
-disasm: kernel
+disasm:
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build --release
+	@rm src/linker.ld
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
 
 # 显示debug版本的反汇编
 disasm-debug:
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build
+	@rm src/linker.ld
 	@$(OBJDUMP) $(DISASM) $(DEBUG_KERNEL_ELF) | less
 
-disasm-vim: kernel
+disasm-vim:
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build --release
+	@rm src/linker.ld
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
 	@vim $(DISASM_TMP)
 	@rm $(DISASM_TMP)
@@ -117,7 +128,7 @@ file-debug: kernel-debug
 addr2line:
 	addr2line $(ADDR) -f -a -p -C -e $(DEBUG_KERNEL_ELF)
 
-run: tools run-inner
+run: run-inner
 
 tools:
 	(which $(K210-BURNER)) || (cd .. && git clone https://github.com/sipeed/kflash.py.git && mv kflash.py tools)
@@ -141,13 +152,15 @@ else
 endif
 
 # 编译运行debug版本
-run-debug: tools build-debug
+run-debug: build-debug
 ifeq ($(BOARD),qemu)
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
-		-device loader,file=$(DEBUG_KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+		-device loader,file=$(DEBUG_KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
+		-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+        -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 else
 	@cp $(BOOTLOADER) $(BOOTLOADER).copy
 	@dd if=$(DEBUG_KERNEL_BIN) of=$(BOOTLOADER).copy bs=128K seek=1

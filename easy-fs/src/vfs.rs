@@ -13,7 +13,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 
+// DiskInode 放在磁盘块中比较固定的位置，而 Inode 是放在内存中的
 pub struct Inode {
+    inode_id: usize,
+    // block_id 和 block_offset 记录该 Inode 对应的 DiskInode 保存在磁盘上的具体位置
     block_id: usize,
     block_offset: usize,
     fs: Arc<Mutex<EasyFileSystem>>,
@@ -28,6 +31,7 @@ impl Inode {
     ) -> Self {
         let (block_id, block_offset) = fs.lock().get_disk_inode_pos(inode_id);
         Self {
+            inode_id: inode_id as usize,
             block_id: block_id as usize,
             block_offset,
             fs,
@@ -35,6 +39,7 @@ impl Inode {
         }
     }
 
+    // 简化对于 Inode 对应的磁盘上的 DiskInode 的访问流程
     fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode) -> V) -> V {
         get_block_cache(
             self.block_id,
@@ -55,6 +60,7 @@ impl Inode {
     }
     */
 
+    // 尝试从根目录的 DiskInode 上找到要索引的文件名对应的 inode 编号
     fn find_inode_id(
         &self,
         name: &str,
@@ -81,11 +87,13 @@ impl Inode {
         None
     }
 
+    // find 方法只会被根目录 Inode 调用，文件系统中其他文件的 Inode 不会调用这个方法
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         let _ = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
             self.find_inode_id(name, disk_inode)
             .map(|inode_id| {
+                // 根据查到 inode 编号对应生成一个 Inode 用于后续对文件的访问
                 Arc::new(Self::new(
                     inode_id,
                     self.fs.clone(),
@@ -93,6 +101,10 @@ impl Inode {
                 ))
             })
         })
+    }
+
+    pub fn get_inode_id(&self) -> usize {
+        self.inode_id
     }
 
     fn increase_size(
@@ -112,8 +124,10 @@ impl Inode {
         disk_inode.increase_size(new_size, v, &self.block_device);
     }
 
+    // 在根目录下创建一个文件，该方法只有根目录的 Inode 会调用
     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
         let mut fs = self.fs.lock();
+        // 检查文件是否已经在根目录下，如果找到的话返回 None
         if self.modify_disk_inode(|root_inode| {
             // assert it is a directory
             assert!(root_inode.is_dir());
@@ -122,6 +136,7 @@ impl Inode {
         }).is_some() {
             return None;
         }
+        // 为待创建文件分配一个新的 inode 并进行初始化
         // create a new file
         // alloc a inode with an indirect block
         let new_inode_id = fs.alloc_inode();
@@ -134,6 +149,7 @@ impl Inode {
         ).lock().modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
             new_inode.initialize(DiskInodeType::File);
         });
+        // 将待创建文件的目录项插入到根目录的内容中使得之后可以索引过来
         self.modify_disk_inode(|root_inode| {
             // append file in the dirent
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
@@ -158,6 +174,8 @@ impl Inode {
         )))
     }
 
+    // 收集根目录下的所有文件的文件名并以向量的形式返回回来
+    // 只有根目录的 Inode 才会调用
     pub fn ls(&self) -> Vec<String> {
         let _ = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
@@ -179,6 +197,8 @@ impl Inode {
         })
     }
 
+    // 从根目录索引到一个文件之后可以对它进行读写
+    // 这里的读写作用在字节序列的一段区间上
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         let _ = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
@@ -186,6 +206,7 @@ impl Inode {
         })
     }
 
+    // 注意在 DiskInode::write_at 之前先调用 increase_size 对自身进行扩容
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
         let mut fs = self.fs.lock();
         self.modify_disk_inode(|disk_inode| {
@@ -194,6 +215,7 @@ impl Inode {
         })
     }
 
+    // 文件清空。在索引到文件的 Inode 之后可以调用 clear 方法
     pub fn clear(&self) {
         let mut fs = self.fs.lock();
         self.modify_disk_inode(|disk_inode| {

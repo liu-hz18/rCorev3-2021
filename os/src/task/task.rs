@@ -193,6 +193,7 @@ impl TaskControlBlock {
             .unwrap()
             .ppn();
         // push arguments on user stack
+        // 将命令行参数压入用户栈
         user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
         let argv_base = user_sp;
         let mut argv: Vec<_> = (0..=args.len())
@@ -203,6 +204,7 @@ impl TaskControlBlock {
                 )
             })
             .collect();
+        // 字符串是通过 translated_str 从应用地址空间取出的，它的末尾不包含 \0 。为了应用能知道每个字符串的长度，我们需要手动在末尾加入 \0
         *argv[args.len()] = 0;
         for i in 0..args.len() {
             user_sp -= args[i].len() + 1;
@@ -214,6 +216,10 @@ impl TaskControlBlock {
             }
             *translated_refmut(memory_set.token(), p as *mut u8) = 0;
         }
+        // 将 user_sp 以 8 字节对齐
+        // make the user_sp aligned to 8B for k210 platform
+        user_sp -= user_sp % core::mem::size_of::<usize>();
+
         // **** hold current PCB lock
         let mut inner = self.acquire_inner_lock();
         // substitute memory_set
@@ -231,6 +237,9 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        // 需要修改 Trap 上下文中的 a0/a1 寄存器
+        // 让 a0 表示命令行参数的个数，而 a1 则表示图中 argv_base 即蓝色区域的起始地址
+        // 这两个参数在第一次进入对应应用的用户态的时候会被接收并用于还原命令行参数
         trap_cx.x[10] = args.len();
         trap_cx.x[11] = argv_base;
         *inner.get_trap_cx() = trap_cx;

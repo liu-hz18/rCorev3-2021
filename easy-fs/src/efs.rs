@@ -25,6 +25,7 @@ pub struct EasyFileSystem {
 type DataBlock = [u8; BLOCK_SZ];
 
 impl EasyFileSystem {
+    // 在块设备上创建并初始化一个 easy-fs 文件系统
     pub fn create(
         block_device: Arc<dyn BlockDevice>,
         total_blocks: u32,
@@ -37,6 +38,7 @@ impl EasyFileSystem {
             ((inode_num * core::mem::size_of::<DiskInode>() + BLOCK_SZ - 1) / BLOCK_SZ) as u32;
         let inode_total_blocks = inode_bitmap_blocks + inode_area_blocks;
         let data_total_blocks = total_blocks - 1 - inode_total_blocks;
+        // 数据块位图区域最合理的大小是剩余的块数除以 4097 再上取整，因为位图中的每个块能够对应 4096 个数据块。其余的块就都作为数据块使用
         let data_bitmap_blocks = (data_total_blocks + 4096) / 4097;
         let data_area_blocks = data_total_blocks - data_bitmap_blocks;
         let data_bitmap = Bitmap::new(
@@ -51,6 +53,7 @@ impl EasyFileSystem {
             data_area_start_block: 1 + inode_total_blocks + data_bitmap_blocks,
         };
         // clear all blocks
+        // 首先将块设备的前 total_blocks 个块清零，因为我们的 easy-fs 要用到它们，这也是为初始化做准备
         for i in 0..total_blocks {
             get_block_cache(
                 i as usize, 
@@ -62,6 +65,7 @@ impl EasyFileSystem {
             });
         }
         // initialize SuperBlock
+        // 只需传入之前计算得到的每个区域的块数就行了
         get_block_cache(0, Arc::clone(&block_device))
         .lock()
         .modify(0, |super_block: &mut SuperBlock| {
@@ -75,8 +79,11 @@ impl EasyFileSystem {
         });
         // write back immediately
         // create a inode for root node "/"
-        assert_eq!(efs.alloc_inode(), 0);
+        // 创建根目录 /
+        assert_eq!(efs.alloc_inode(), 0); // 第一次分配，它的编号固定是 0
+        // 根据 inode 编号获取该 inode 所在的块的编号以及块内偏移
         let (root_inode_block_id, root_inode_offset) = efs.get_disk_inode_pos(0);
+        // easy-fs 中的唯一一个目录
         get_block_cache(
             root_inode_block_id as usize,
             Arc::clone(&block_device)
@@ -87,9 +94,11 @@ impl EasyFileSystem {
         });
         Arc::new(Mutex::new(efs))
     }
-
+    
+    // 从一个已写入了 easy-fs 镜像的块设备上打开我们的 easy-fs 
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Mutex<Self>> {
         // read SuperBlock
+        // 将块设备编号为 0 的块作为超级块读取进来，就可以从中知道 easy-fs 的磁盘布局，由此可以构造 efs 实例
         get_block_cache(0, Arc::clone(&block_device))
             .lock()
             .read(0, |super_block: &SuperBlock| {
@@ -113,7 +122,9 @@ impl EasyFileSystem {
             })        
     }
 
+    // 获取根目录的 Inode
     pub fn root_inode(efs: &Arc<Mutex<Self>>) -> Inode {
+        // 根目录对应于文件系统中第一个分配的 inode ，因此它的 inode_id 总会是 0
         let block_device = Arc::clone(&efs.lock().block_device);
         Inode::new(
             0,
@@ -149,6 +160,7 @@ impl EasyFileSystem {
     }
     */
 
+    // inode 和数据块的分配/回收也由它负责
     pub fn alloc_inode(&mut self) -> u32 {
         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
     }
@@ -158,6 +170,7 @@ impl EasyFileSystem {
         self.data_bitmap.alloc(&self.block_device).unwrap() as u32 + self.data_area_start_block
     }
 
+    // // 传入/返回的参数都表示数据块在块设备上的编号，而不是在数据块位图中分配的比特编号
     pub fn dealloc_data(&mut self, block_id: u32) {
         get_block_cache(
             block_id as usize,

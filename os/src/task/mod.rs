@@ -92,7 +92,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 // 将初始进程 initproc 加入任务管理器
 lazy_static! {
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
-        let inode = open_file("ch5_initproc", OpenFlags::RDONLY).unwrap();
+        let inode = open_file("ch7_initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
         TaskControlBlock::new(v.as_slice())
     });

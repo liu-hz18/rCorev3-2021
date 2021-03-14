@@ -10,6 +10,7 @@ pub mod console;
 mod syscall;
 mod lang_items;
 
+extern crate alloc;
 extern crate core;
 #[macro_use]
 extern crate bitflags;
@@ -17,6 +18,7 @@ extern crate bitflags;
 use buddy_system_allocator::LockedHeap;
 pub use console::{STDIN, STDOUT};
 use syscall::*;
+use alloc::vec::Vec;
 
 // 在应用中使能动态内存分配
 const USER_HEAP_SIZE: usize = 16384;
@@ -33,18 +35,35 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 
 #[no_mangle]
 #[link_section = ".text.entry"]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(argc: usize, argv: usize) -> ! {
     unsafe {
         HEAP.lock()
             .init(HEAP_SPACE.as_ptr() as usize, USER_HEAP_SIZE);
     }
-    exit(main()); // 使用它退出应用程序并将返回值告知 底层的批处理系统
+    let mut v: Vec<&'static str> = Vec::new();
+    // 分别取出 argc 个字符串的起始地址 (基于字符串数组的 base 地址 argv)
+    for i in 0..argc {
+        let str_start = unsafe {
+            ((argv + i * core::mem::size_of::<usize>()) as *const usize).read_volatile()
+        };
+        // 从它向后找到第一个 \0 就可以得到一个完整的 &str 格式的命令行参数字符串并加入到向量 v 中
+        let len = (0usize..).find(|i| unsafe {
+            ((str_start + *i) as *const u8).read_volatile() == 0
+        }).unwrap();
+        v.push(
+            core::str::from_utf8(unsafe {
+                core::slice::from_raw_parts(str_start as *const u8, len)
+            }).unwrap()
+        );
+    }
+    // v.as_slice(): type = &[&str]
+    exit(main(argc, v.as_slice())); // 使用它退出应用程序并将返回值告知 底层的批处理系统
     panic!("unreachable after sys_exit!");
 }
 
 #[linkage = "weak"]
 #[no_mangle]
-fn main() -> i32 {
+fn main(_argc: usize, _argv: &[&str]) -> i32 {
     panic!("Cannot find main!");
 }
 
@@ -142,10 +161,8 @@ pub fn getpid() -> isize {
 pub fn fork() -> isize {
     sys_fork()
 }
-pub fn exec(path: &str) -> isize {
-    sys_exec(path, &[0 as *const u8])
-}
-// pub fn exec(path: &str, args: &[*const u8]) -> isize { sys_exec(path, args) }
+// pub fn exec(path: &str) -> isize { sys_exec(path, &[0 as *const u8]) }
+pub fn exec(path: &str, args: &[*const u8]) -> isize { sys_exec(path, args) }
 
 // 等待任意一个子进程结束
 pub fn wait(exit_code: &mut i32) -> isize {

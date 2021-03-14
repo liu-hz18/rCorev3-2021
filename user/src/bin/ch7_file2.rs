@@ -33,7 +33,7 @@ pub fn main() -> i32 {
     close(fd);
 
     unlink(fname);
-    let fd = open(lname0, OpenFlags::WRONLY) as usize;
+    let fd = open(lname0, OpenFlags::RDONLY) as usize;
     let stat2 = Stat::new();
     let mut buf = [0u8; 100];
     let read_len = read(fd, &mut buf) as usize;

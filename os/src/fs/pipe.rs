@@ -192,4 +192,6 @@ impl File for Pipe {
     }
     fn readable(&self) -> bool { self.readable }
     fn writable(&self) -> bool { self.writable }
+    fn nlink(&self) -> usize { 1 }
+    fn inode_id(&self) -> usize { 0 }
 }

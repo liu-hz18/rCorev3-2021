@@ -177,6 +177,8 @@ impl MemorySet {
             MapType::Identical,
             MapPermission::R | MapPermission::W,
         ), None);
+        // 了能够在内核中访问 VirtIO 总线，我们就必须在内核地址空间中提前进行映射
+        // 进行的是透明的恒等映射从而让内核可以兼容于直接访问物理地址的设备驱动库
         println!("mapping memory-mapped registers");
         for pair in MMIO {
             memory_set.push(MapArea::new(

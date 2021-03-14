@@ -15,7 +15,7 @@ use user_lib::{
 fn main() -> i32 {
     if fork() == 0 {
         // 我们需要在字符串末尾手动加入 \0 ，因为 Rust 在将这些字符串连接到只读数据段的时候不会插入 \0
-        exec("ch5_usershell\0");
+        exec("ch5_usershell\0", &[0 as *const u8]);
     } else { // 返回值不为 0 的分支，表示调用 fork 的初始进程自身
         loop {
             let mut exit_code: i32 = 0;

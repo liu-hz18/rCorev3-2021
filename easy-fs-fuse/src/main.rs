@@ -32,6 +32,10 @@ fn main() {
     easy_fs_pack().expect("Error when packing easy-fs!");
 }
 
+const IMG_SIZE: u32 = 8192; // KB
+const BLOCK_NUM: u32 = IMG_SIZE * 2; // blocks
+
+// 在 easy-fs-fuse 这个应用正常退出的过程中，块缓存因生命周期结束会被回收，届时如果 modified 标志为 true 就会将修改写回磁盘
 fn easy_fs_pack() -> std::io::Result<()> {
     let matches = App::new("EasyFileSystem packer")
         .arg(Arg::with_name("source")
@@ -56,13 +60,13 @@ fn easy_fs_pack() -> std::io::Result<()> {
             .write(true)
             .create(true)
             .open(format!("{}{}", target_path, "fs.img"))?;
-        f.set_len(8192 * 512).unwrap();
+        f.set_len(BLOCK_NUM as u64 * 512).unwrap();
         f
     })));
     // 4MiB, at most 4095 files
     let efs = EasyFileSystem::create(
         block_file.clone(),
-        8192,
+        BLOCK_NUM,
         1,
     );
     let root_inode = Arc::new(EasyFileSystem::root_inode(&efs));
@@ -75,6 +79,7 @@ fn easy_fs_pack() -> std::io::Result<()> {
             name_with_ext
         })
         .collect();
+    // 这个过程相当于将 HostOS 上的文件系统中的一个文件复制到我们的 easy-fs 中
     for app in apps {
         // load app data from host file system
         let mut host_file = File::open(format!("{}{}", target_path, app)).unwrap();

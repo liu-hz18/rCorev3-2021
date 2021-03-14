@@ -99,6 +99,7 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
+// 我们在 sys_exec 所需的应用 ELF 数据就不再需要通过应用加载器从内核的数据段获取，而是从文件系统中获取即可
 pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
@@ -111,7 +112,9 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
         args_vec.push(translated_str(token, arg_str_ptr as *const u8));
         unsafe { args = args.add(1); }
     }
+    //  以只读的方式在内核中打开应用可执行文件并获取它的对应的 OSInode
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        // 通过 OSInode::read_all 将该文件的数据全部读到一个向量 all_data 中
         let all_data = app_inode.read_all();
         let task = current_task().unwrap();
         let argc = args_vec.len();
@@ -252,7 +255,7 @@ pub fn sys_waitpid_blocking(
 pub fn sys_spawn(path: *const u8) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
-    let mut args_vec: Vec<String> = Vec::new();
+    let args_vec: Vec<String> = Vec::new();
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let all_data = app_inode.read_all();
         let current_task = current_task().unwrap();
@@ -263,7 +266,6 @@ pub fn sys_spawn(path: *const u8) -> isize {
         // we do not have to move to next instruction since we have done it before
         // for child process, fork returns 0
         trap_cx.x[10] = 0;
-        let argc = args_vec.len();
         new_task.exec(all_data.as_slice(), args_vec);
         add_task(new_task);
         new_pid as isize
