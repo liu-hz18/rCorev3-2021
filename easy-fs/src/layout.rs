@@ -263,32 +263,6 @@ impl DiskInode {
             } 
         });
     }
-    
-    /*
-    pub fn clear_size(&mut self, block_device: &Arc<dyn BlockDevice>) -> Vec<u32> {
-        let mut v: Vec<u32> = Vec::new();
-        let blocks = self.blocks() as usize;
-        self.size = 0;
-        for i in 0..blocks.min(INODE_DIRECT_COUNT) {
-            v.push(self.direct[i]);
-            self.direct[i] = 0;
-        }
-        if blocks > INODE_DIRECT_COUNT {
-            get_block_cache(
-                self.indirect1 as usize,
-                Arc::clone(block_device),
-            )
-            .lock()
-            .modify(0, |indirect_block: &mut IndirectBlock| {
-                for i in 0..blocks - INODE_DIRECT_COUNT {
-                    v.push(indirect_block[i]);
-                    indirect_block[i] = 0;
-                }
-            });
-        }
-        v
-    }
-    */
 
     // 清空文件的内容并回收所有数据和索引块
     /// Clear size to zero and return blocks that should be deallocated.
@@ -477,6 +451,12 @@ pub const DIRENT_SZ: usize = 32;
 pub type DirentBytes = [u8; DIRENT_SZ];
 
 impl DirEntry {
+    pub fn empty() -> Self {
+        Self {
+            name: [0u8; NAME_LENGTH_LIMIT + 1],
+            inode_number: 0,
+        }
+    }
     // 一个合法的目录项
     pub fn new(name: &str, inode_number: u32) -> Self {
         let mut bytes = [0u8; NAME_LENGTH_LIMIT + 1];

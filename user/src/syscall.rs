@@ -80,8 +80,9 @@ pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
 /// 参数：`exit_code` 表示应用程序的返回值。
 /// 返回值：该系统调用不应该返回。
 /// syscall ID：93
-pub fn sys_exit(exit_code: i32) -> isize {
-    syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0])
+pub fn sys_exit(exit_code: i32) -> ! {
+    syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0]);
+    panic!("sys_exit never returns!");
 }
 
 /// 功能：应用主动交出 CPU 所有权并切换到其他应用。

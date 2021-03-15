@@ -8,10 +8,9 @@ extern crate user_lib;
 /// > rustsbi 0.2.0-alpha.1 已经修复，可以正常退出
 
 #[no_mangle]
-pub fn main() -> ! {
-    let mut sstatus: usize;
+pub fn main() -> isize {
     unsafe {
-        llvm_asm!("csrr $0, sstatus" : "=r"(sstatus) ::: "volatile");
+        (0x0 as *mut u8).write_volatile(0);
     }
-    panic!("(-_-) I get sstatus:{:x}\n", sstatus);
+    panic!("FAIL: T.T\n");
 }

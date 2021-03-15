@@ -7,6 +7,7 @@ extern crate user_lib;
 extern crate core;
 use core::slice;
 use user_lib::{write, STDOUT};
+
 /// 正确输出：
 /// Test write0 OK!
 
@@ -17,6 +18,9 @@ unsafe fn r_sp() -> usize {
     llvm_asm!("mv $0, sp": "=r"(sp) ::: "volatile");
     sp
 }
+
+// 注意，这里要求 user_stack 大小为 4096 且按照 4096 字节对齐。
+// 请调整你内核中的用户栈的设定。
 
 unsafe fn stack_range() -> (usize, usize) {
     let sp = r_sp();

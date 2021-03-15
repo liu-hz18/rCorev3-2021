@@ -10,7 +10,7 @@ use user_lib::mmap;
 fn main() -> i32 {
     let start: usize = 0x10000000;
     let len: usize = 4096;
-    let prot: usize = 2; // 010, XWR
+    let prot: usize = 2;
     assert_eq!(len as isize, mmap(start, len, prot));
     let addr: *mut u8 = start as *mut u8;
     unsafe {

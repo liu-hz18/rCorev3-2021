@@ -20,6 +20,7 @@ fn insert_app_data() -> Result<()> {
             name_with_ext
         })
         .collect();
+    apps.retain(|x| x!="");
     apps.sort();
 
     writeln!(f, r#"

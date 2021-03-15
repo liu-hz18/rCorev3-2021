@@ -23,15 +23,13 @@ pub fn main() -> i32 {
     loop {
         let c = getchar();
         match c {
-            // 回车键, fork 出一个子进程并试图通过 exec 系统调用执行一个应用
-            // 如果返回值为 -1 的话目前说明在应用管理器中找不到名字相同的应用，此时子进程就直接打印错误信息并退出
             LF | CR => {
                 println!("");
                 if !line.is_empty() {
                     line.push('\0');
                     let cpid = spawn(line.as_str());
                     if cpid < 0 {
-                        println!("invalid file name {}", line.as_str());
+                        println!("invalid file name");
                         line.clear();
                         print!(">> ");
                         continue;
@@ -40,7 +38,6 @@ pub fn main() -> i32 {
                     let mut exit_pid: isize;
                     loop {
                         exit_pid = waitpid(cpid as usize, &mut xstate);
-                        println!("exit_pid: {}", exit_pid);
                         if exit_pid == -1 {
                             yield_();
                         } else {
@@ -53,13 +50,12 @@ pub fn main() -> i32 {
                 }
                 print!(">> ");
             }
-            // 输入退格键（第 53 行），首先我们需要将屏幕上当前行的最后一个字符用空格替换掉，这可以通过输入一个特殊的退格字节 BS 来实现
             BS | DL => {
                 if !line.is_empty() {
                     print!("{}", BS as char);
                     print!(" ");
                     print!("{}", BS as char);
-                    line.pop(); // line 也需要弹出最后一个字符
+                    line.pop();
                 }
             }
             _ => {

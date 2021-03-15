@@ -16,11 +16,11 @@ fn main() -> i32 {
     for _ in 0..MAIL_MAX {
         assert_eq!(mail_write(pid as usize, &buffer0), BUF_LEN as isize);
     }
-    assert_eq!(mail_write(pid as usize, &buffer0), -1); // 邮箱满
+    assert_eq!(mail_write(pid as usize, &buffer0), -1);
     let mut buf = [0u8; BUF_LEN];
-    assert_eq!(mail_read(&mut buf), BUF_LEN as isize); // 读一个邮箱， FIFO
-    assert_eq!(mail_write(pid as usize, &buffer0), BUF_LEN as isize); // 可以继续写一个邮箱
-    assert_eq!(mail_write(pid as usize, &buffer0), -1); // 邮箱满
+    assert_eq!(mail_read(&mut buf), BUF_LEN as isize);
+    assert_eq!(mail_write(pid as usize, &buffer0), BUF_LEN as isize);
+    assert_eq!(mail_write(pid as usize, &buffer0), -1);
     println!("mail1 test OK!");
     0
 }

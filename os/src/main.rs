@@ -9,10 +9,10 @@
 
 // use log::{error, warn, info, debug, trace};
 
-extern crate alloc;
-
 #[macro_use]
 extern crate bitflags;
+extern crate log;
+extern crate alloc;
 
 #[macro_use]
 mod console;

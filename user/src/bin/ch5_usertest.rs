@@ -27,8 +27,6 @@ static TESTS: &[&str] = &[
     "ch5_getpid\0",
     "ch5_spawn0\0",
     "ch5_spawn1\0",
-    "ch5_fantastic_text\0",
-    "ch5_stack_overflow\0",
 ];
 
 use user_lib::{spawn, waitpid};
@@ -41,7 +39,10 @@ pub fn main() -> i32 {
         let mut xstate: i32 = Default::default();
         let wait_pid = waitpid(pid as usize, &mut xstate);
         assert_eq!(pid, wait_pid);
-        println!("\x1b[32mUsertests: Test {} in Process {} exited with code {}\x1b[0m", test, pid, xstate);
+        println!(
+            "\x1b[32mUsertests: Test {} in Process {} exited with code {}\x1b[0m",
+            test, pid, xstate
+        );
     }
     println!("ch5 Usertests passed!");
     0

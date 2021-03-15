@@ -3,14 +3,7 @@
 
 #[macro_use]
 extern crate user_lib;
-use user_lib::{
-    open,
-    close,
-    fstat,
-    OpenFlags,
-    Stat,
-    StatMode,
-};
+use user_lib::{close, fstat, open, OpenFlags, Stat, StatMode};
 
 #[no_mangle]
 pub fn main() -> i32 {
@@ -24,6 +17,6 @@ pub fn main() -> i32 {
     assert_eq!(stat.mode, StatMode::FILE);
     assert_eq!(stat.nlink, 1);
     close(fd);
-    println!("TEST fstat OK!");
+    println!("Test fstat OK!");
     0
 }

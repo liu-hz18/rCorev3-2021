@@ -5,6 +5,7 @@
 extern crate user_lib;
 use user_lib::{write, STDOUT};
 const DATA_STRING: &'static str = "string from data section\n";
+
 /// 正确输出：
 /// string from data section
 /// strinstring from stack section

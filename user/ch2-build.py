@@ -16,3 +16,4 @@ if __name__ == '__main__':
     set_base_address(origin_base_address, target_base_address)
     os.system('cargo build --release')
     set_base_address(target_base_address, origin_base_address)
+

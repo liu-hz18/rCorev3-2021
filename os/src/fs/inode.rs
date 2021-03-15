@@ -13,8 +13,6 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::prelude::v1::Box;
-use alloc::rc::Rc;
 
 // 硬链接映射表:
 lazy_static! {
@@ -147,6 +145,7 @@ pub fn list_apps() {
     println!("/**** APPS ****");
     for app in ROOT_INODE.ls() {
         let inode = ROOT_INODE.find(&app[..]).unwrap();
+        println!("{}", app);
         map(app.clone(), Arc::new(OSInode::new(
             true,
             false,
@@ -172,7 +171,6 @@ impl OpenFlags {
     }
 }
 
-// TODO: 解决死锁问题
 // 在 内核 中根据文件名打开一个根目录下的文件
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
