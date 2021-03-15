@@ -75,39 +75,39 @@ pub fn trap_handler() -> ! {
         }
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
-            println!(
+            info!(
                 "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
                 scause.cause(),
                 stval,
                 current_trap_cx().sepc,
             );
-            println!("[kernel] Store PageFault in Application {} (killed), core dumped.", current_task_id());
+            info!("[kernel] Store PageFault in Application {} (killed), core dumped.", current_task_id());
             exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::LoadFault) |
         Trap::Exception(Exception::LoadPageFault) => {
-            println!(
+            info!(
                 "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
                 scause.cause(),
                 stval,
                 current_trap_cx().sepc,
             );
-            println!("[kernel] Load PageFault in Application {} (killed), core dumped.", current_task_id());
+            info!("[kernel] Load PageFault in Application {} (killed), core dumped.", current_task_id());
             exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::InstructionFault) |
         Trap::Exception(Exception::InstructionPageFault) => {
-            println!(
+            info!(
                 "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
                 scause.cause(),
                 stval,
                 current_trap_cx().sepc,
             );
-            println!("[kernel] Instruction PageFault in Application {} (killed), core dumped.", current_task_id());
+            info!("[kernel] Instruction PageFault in Application {} (killed), core dumped.", current_task_id());
             exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::IllegalInstruction) => {
-            println!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
+            info!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
             exit_current_and_run_next(-3);
         },
         // 抢占式调度

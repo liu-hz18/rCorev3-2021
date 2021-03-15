@@ -27,7 +27,7 @@ use alloc::string::String;
 // 打印退出的应用程序的返回值并同样调用 run_next_app 切换到下一个应用程序
 pub fn sys_exit(exit_code: i32) -> ! {
     // 在退出之前我们打印应用的退出信息并输出它的退出码。
-    // println!("[kernel] Application {} exited with code {}", current_task_id(), exit_code);
+    // info!("[kernel] Application {} exited with code {}", current_task_id(), exit_code);
     exit_current_and_run_next(exit_code); // 退出当前的应用并切换到下个应用
     panic!("Unreachable in sys_exit!");
 }
@@ -175,7 +175,7 @@ pub fn sys_waitpid_non_blocking(
             *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
             return found_pid as isize;
         } else {
-            println!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
+            info!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
             return -1 as isize;
         }
     } else {
@@ -232,7 +232,7 @@ pub fn sys_waitpid_blocking(
                 *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
                 return found_pid as isize;
             } else {
-                println!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
+                info!("[kernel] buffer overflow in APP {}, in sys_waitpid! v_addr={:#x}", current_task_id(), exit_code_ptr as usize);
                 return -1 as isize;
             }
         } else {

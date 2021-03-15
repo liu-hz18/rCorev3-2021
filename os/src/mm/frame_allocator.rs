@@ -56,7 +56,7 @@ impl StackFrameAllocator {
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
-        println!("[kernel] last {} Physical Frames.", self.end - self.current);
+        info!("[kernel] last {} Physical Frames.", self.end - self.current);
     }
     fn usable_frames(&self) -> usize {
         self.end - self.current + self.recycled.len()
@@ -81,7 +81,7 @@ impl FrameAllocator for StackFrameAllocator {
             // 从之前从未分配过的物理页号区间 [current,end) 上进行分配，
             // 我们分配它的 左端点 current ，同时将管理器内部维护的 current 加一代表 current 此前已经被分配过了
             if self.current == self.end { // 内存耗尽分配失败
-                println!("[kernel] Out Of Memory! No physical frames can be allocated! l=r={}", self.current);
+                info!("[kernel] Out Of Memory! No physical frames can be allocated! l=r={}", self.current);
                 None
             } else {
                 self.current += 1;
@@ -122,7 +122,7 @@ pub fn init_frame_allocator() {
     FRAME_ALLOCATOR
         .lock()
         .init(PhysAddr::from(ekernel as usize).ceil(), PhysAddr::from(MEMORY_END).floor());
-    println!("[kernel] Frame Total Size [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
+    info!("[kernel] Frame Total Size [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
 }
 
 // 包装为一个 FrameTracker

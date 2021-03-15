@@ -27,7 +27,7 @@ pub fn init() {
         },
         None => {
             // println!("\x1b[93m[LOGGER][0] logging level is not specified. use default level: `INFO`\x1b[0m");
-            LevelFilter::Info
+            LevelFilter::Off
         }, // default is INFO
     });
     // println!("\x1b[34m[INFO][0] Logging Level: {:?}\x1b[0m", log::max_level());

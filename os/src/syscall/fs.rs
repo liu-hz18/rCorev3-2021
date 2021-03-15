@@ -64,7 +64,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         drop(inner);
         let (printable, start_pa, end_pa) = virtual_addr_range_printable(token, buf, len);
         if !printable {
-            println!("[kernel] buffer overflow in APP {}, in sys_write! v_addr=[{:#x}, {:#x}), p_addr=[{:#x}, {:#x})", current_task_id(), buf as usize, buf as usize + len, start_pa, end_pa);
+            info!("[kernel] buffer overflow in APP {}, in sys_write! v_addr=[{:#x}, {:#x}), p_addr=[{:#x}, {:#x})", current_task_id(), buf as usize, buf as usize + len, start_pa, end_pa);
             return -1 as isize;
         }
         let buffers = translated_byte_buffer(token, buf, len);

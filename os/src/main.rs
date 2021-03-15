@@ -11,6 +11,7 @@
 
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
 extern crate log;
 extern crate alloc;
 
@@ -48,38 +49,16 @@ fn clear_bss() {
 
 #[no_mangle] // 避免编译器对 rust_main 的名字进行混淆, 不然会链接失败
 pub fn rust_main() -> ! {
-    // extern "C" {
-    //     fn stext();
-    //     fn etext();
-    //     fn srodata();
-    //     fn erodata();
-    //     fn sdata();
-    //     fn edata();
-    //     fn sbss();
-    //     fn ebss();
-    //     fn boot_stack();
-    //     fn boot_stack_top();
-    // }
     // 在执行环境调用 应用程序的 rust_main 主函数前，把 .bss 段的全局数据清零
     // 在程序内自己进行清零的时候，我们就不用去解析 ELF 了。而是通过链接脚本 linker.ld 中给出的全局符号 sbss 和 ebss 来确定 .bss 段的位置
     clear_bss();
-    // 输出 os 内存空间布局
-    // info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
-    // info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
-    // info!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
-    // info!(
-    //     "boot_stack [{:#x}, {:#x})",
-    //     boot_stack as usize, boot_stack_top as usize
-    // );
-    // info!(".bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
-    // dbgx!(boot_stack_top as usize - boot_stack as usize);
+    logging::init();
 
-    println!("[kernel] Hello, world!");
+    info!("[kernel] Hello, world!");
     mm::init();
     mm::remap_test();
-    println!("[kernel] after initproc!");
+    info!("[kernel] after initproc!");
 
-    // logging::init();
     trap::init();
 
     trap::enable_timer_interrupt(); // 设置了 sie.stie 使得 S 特权级时钟中断不会被屏蔽

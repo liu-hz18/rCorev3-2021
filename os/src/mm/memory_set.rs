@@ -136,50 +136,50 @@ impl MemorySet {
         // 映射调班
         memory_set.map_trampoline();
         // map kernel sections
-        println!("[kernel] .text [{:#x}, {:#x}) = {:#x} B", stext as usize, etext as usize, etext as usize-stext as usize);
-        println!("[kernel] .rodata [{:#x}, {:#x}) = {:#x} B", srodata as usize, erodata as usize, erodata as usize - srodata as usize);
-        println!("[kernel] .data [{:#x}, {:#x}) = {:#x} B", sdata as usize, edata as usize, edata as usize - sdata as usize);
-        println!("[kernel] .bss [{:#x}, {:#x}) = {:#x} B", sbss_with_stack as usize, ebss as usize, ebss as usize - sbss_with_stack as usize);
+        info!("[kernel] .text [{:#x}, {:#x}) = {:#x} B", stext as usize, etext as usize, etext as usize-stext as usize);
+        info!("[kernel] .rodata [{:#x}, {:#x}) = {:#x} B", srodata as usize, erodata as usize, erodata as usize - srodata as usize);
+        info!("[kernel] .data [{:#x}, {:#x}) = {:#x} B", sdata as usize, edata as usize, edata as usize - sdata as usize);
+        info!("[kernel] .bss [{:#x}, {:#x}) = {:#x} B", sbss_with_stack as usize, ebss as usize, ebss as usize - sbss_with_stack as usize);
         // 映射地址空间中最低 256GiB 中的所有的逻辑段
         // 从低地址到高地址 依次创建 5 个逻辑段并通过 push 方法将它们插入到内核地址空间中
-        println!("[kernel] mapping .text section");
+        info!("[kernel] mapping .text section");
         memory_set.push(MapArea::new(
             (stext as usize).into(), // stext == BASE_ADDRESS
             (etext as usize).into(),
             MapType::Identical,
             MapPermission::R | MapPermission::X,
         ), None);
-        println!("[kernel] mapping .rodata section");
+        info!("[kernel] mapping .rodata section");
         memory_set.push(MapArea::new(
             (srodata as usize).into(),
             (erodata as usize).into(),
             MapType::Identical,
             MapPermission::R,
         ), None);
-        println!("[kernel] mapping .data section");
+        info!("[kernel] mapping .data section");
         memory_set.push(MapArea::new(
             (sdata as usize).into(),
             (edata as usize).into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
         ), None);
-        println!("[kernel] mapping .bss section");
+        info!("[kernel] mapping .bss section");
         memory_set.push(MapArea::new(
             (sbss_with_stack as usize).into(),
             (ebss as usize).into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
         ), None);
-        println!("[kernel] mapping physical memory");
+        info!("[kernel] mapping physical memory");
         memory_set.push(MapArea::new(
             (ekernel as usize).into(),
             MEMORY_END.into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
         ), None);
-        // 了能够在内核中访问 VirtIO 总线，我们就必须在内核地址空间中提前进行映射
+        // 为了能够在内核中访问 VirtIO 总线，我们就必须在内核地址空间中提前进行映射
         // 进行的是透明的恒等映射从而让内核可以兼容于直接访问物理地址的设备驱动库
-        println!("[kernel] mapping memory-mapped registers");
+        info!("[kernel] mapping memory-mapped registers");
         for pair in MMIO {
             memory_set.push(MapArea::new(
                 (*pair).0.into(),
@@ -468,5 +468,5 @@ pub fn remap_test() {
         kernel_space.page_table.translate(mid_data.floor()).unwrap().executable(),
         false,
     );
-    println!("[kernel] remap_test passed!");
+    info!("[kernel] remap_test passed!");
 }

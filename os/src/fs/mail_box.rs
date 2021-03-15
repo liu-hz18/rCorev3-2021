@@ -29,7 +29,7 @@ impl MailBox {
             self.packets.push_back(packet);
             self.size += 1;
         }
-        // println!("[kernel] packet len={}", packet.len as isize);
+        // info!("[kernel] packet len={}", packet.len as isize);
         packet.len as isize
     }
     pub fn read(&mut self, user_buf: UserBuffer) -> isize {
