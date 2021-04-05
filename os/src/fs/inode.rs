@@ -27,8 +27,8 @@ pub fn link(old_path_str: &str, new_path_str: &str) -> isize {
     let new_path = String::from(new_path_str);
     // 处理创建硬链接的硬链接
     let mut map_lock = HARD_LINK_MAP.lock();
-    if let Some(old_inode) = map_lock.get(&old_path) {
-        old_inode.inner.lock().nlink.lock().0 += 1;
+    if let Some(mut old_inode) = map_lock.get(&old_path) {
+        old_inode.inner.lock().inode.create_nlink();
         let new_inode = Arc::clone(old_inode);
         map_lock.insert(new_path, new_inode);
         0
@@ -40,25 +40,13 @@ pub fn link(old_path_str: &str, new_path_str: &str) -> isize {
 pub fn unlink(path_str: &str) -> isize {
     let path = String::from(path_str);
     let mut map_lock = HARD_LINK_MAP.lock();
-    let mut ret_value: isize = 0;
-    let mut only_one_link = false;
-    if let Some(old_inode) = map_lock.get(&path) {
-        let mut inner = old_inode.inner.lock();
-        let mut inner_nlink = inner.nlink.lock();
-        if inner_nlink.0 > 1 {
-            inner_nlink.0 -= 1;
-            only_one_link = inner_nlink.0 == 1;
-            ret_value = 0;
-        } else {
-            ret_value = -1;
-        }
-    } else {
-        ret_value = -1;
-    }
-    if ret_value == 0 && only_one_link {
+    if let Some(mut old_inode) = map_lock.get(&path) {
+        old_inode.inner.lock().inode.destory_nlink();
         map_lock.remove(&path);
+        0
+    } else {
+        -1
     }
-    ret_value
 }
 
 pub fn map(path_str: String, inode: Arc<OSInode>) {
@@ -89,10 +77,7 @@ pub struct OSInode {
     pub inner: Mutex<OSInodeInner>,
 }
 
-pub struct LinkNumber(pub usize);
-
 pub struct OSInodeInner {
-    pub nlink: Arc<Mutex<LinkNumber>>,
     offset: usize, // 在 sys_read/write 期间被维护偏移量
     pub inode: Arc<Inode>,
 }
@@ -101,14 +86,12 @@ impl OSInode {
     pub fn new(
         readable: bool,
         writable: bool,
-        nlink: Arc<Mutex<LinkNumber>>,
         inode: Arc<Inode>,
     ) -> Self {
         Self {
             readable,
             writable,
             inner: Mutex::new(OSInodeInner {
-                nlink: nlink, // 硬链接初始为1
                 offset: 0,
                 inode,
             }),
@@ -149,7 +132,6 @@ pub fn list_apps() {
         map(app.clone(), Arc::new(OSInode::new(
             true,
             false,
-            Arc::new(Mutex::new(LinkNumber(1 as usize))),
             inode,
         )));
     }
@@ -185,7 +167,6 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
             Some(Arc::new(OSInode::new(
                 readable,
                 writable,
-                Arc::clone(&inner.nlink),
                 Arc::clone(&inner.inode),
             )))
         } else {
@@ -195,7 +176,6 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
                     Arc::new(OSInode::new(
                         readable,
                         writable,
-                        Arc::new(Mutex::new(LinkNumber(1 as usize))),
                         inode,
                     ))
                 });
@@ -211,7 +191,6 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
             Some(Arc::new(OSInode::new(
                 readable,
                 writable,
-                Arc::clone(&inner.nlink),
                 Arc::clone(&inner.inode),
             )))
         } else {
@@ -224,7 +203,7 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 impl File for OSInode {
     fn readable(&self) -> bool { self.readable }
     fn writable(&self) -> bool { self.writable }
-    fn nlink(&self) -> usize { self.inner.lock().nlink.lock().0 }
+    fn nlink(&self) -> usize { self.inner.lock().inode.get_nlink() }
     fn inode_id(&self) -> usize { self.inner.lock().inode.get_inode_id() }
     fn read(&self, mut buf: UserBuffer) -> usize {
         let mut inner = self.inner.lock();

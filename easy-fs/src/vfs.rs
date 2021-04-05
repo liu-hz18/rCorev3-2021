@@ -13,12 +13,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 
+pub struct LinkNumber(pub usize);
+
 // DiskInode 放在磁盘块中比较固定的位置，而 Inode 是放在内存中的
 pub struct Inode {
     inode_id: usize,
     // block_id 和 block_offset 记录该 Inode 对应的 DiskInode 保存在磁盘上的具体位置
     block_id: usize,
     block_offset: usize,
+    nlink: Arc<Mutex<LinkNumber>>, // 硬链接数量
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
 }
@@ -33,9 +36,10 @@ impl Inode {
         Self {
             inode_id: inode_id as usize,
             block_id: block_id as usize,
-            block_offset,
-            fs,
-            block_device,
+            block_offset: block_offset,
+            nlink: Arc::new(Mutex::new(LinkNumber(1))),
+            fs: fs,
+            block_device: block_device,
         }
     }
 
@@ -105,6 +109,19 @@ impl Inode {
 
     pub fn get_inode_id(&self) -> usize {
         self.inode_id
+    }
+
+    pub fn get_nlink(&self) -> usize {
+        self.nlink.lock().0
+    }
+
+    pub fn create_nlink(&self) {
+        self.nlink.lock().0 += 1;
+    }
+
+    pub fn destory_nlink(&self) {
+        let mut nlink_inner = self.nlink.lock();
+        if nlink_inner.0 > 1 { nlink_inner.0 -= 1; }
     }
 
     fn increase_size(

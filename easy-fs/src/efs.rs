@@ -170,7 +170,7 @@ impl EasyFileSystem {
         self.data_bitmap.alloc(&self.block_device).unwrap() as u32 + self.data_area_start_block
     }
 
-    // // 传入/返回的参数都表示数据块在块设备上的编号，而不是在数据块位图中分配的比特编号
+    // 传入/返回的参数都表示数据块在块设备上的编号，而不是在数据块位图中分配的比特编号
     pub fn dealloc_data(&mut self, block_id: u32) {
         get_block_cache(
             block_id as usize,
