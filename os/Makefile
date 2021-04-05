@@ -67,17 +67,17 @@ $(DEBUG_KERNEL_BIN): kernel-debug
 $(FS_IMG):
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
 
-kernel: 
+kernel:
 	@cd ../user && make all CHAPTER=$(CHAPTER)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build --release
+	@cargo build --release --features board_qemu
 	@rm src/linker.ld
 
 kernel-debug:
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build
+	@cargo build --features board_qemu
 	@rm src/linker.ld
 
 clean:
@@ -89,7 +89,7 @@ clean:
 disasm:
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build --release
+	@cargo build --release --features board_qemu
 	@rm src/linker.ld
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
 

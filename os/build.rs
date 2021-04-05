@@ -7,11 +7,11 @@ fn main() {
     insert_app_data().unwrap();
 }
 
-static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/";
+static TARGET_PATH: &str = "../user/build/elf/";
 
 fn insert_app_data() -> Result<()> {
     let mut f = File::create("src/link_app.S").unwrap();
-    let mut apps: Vec<_> = read_dir("../user/build/bin")
+    let mut apps: Vec<_> = read_dir("../user/build/elf/")
         .unwrap()
         .into_iter()
         .map(|dir_entry| {
@@ -55,7 +55,7 @@ _app_names:"#)?;
     .align 3
 app_{0}_start:
 # 不再插入清除全部符号的应用二进制镜像 *.bin ，而是将构建得到的 ELF 格式文件直接链接进来
-    .incbin "{2}{1}"
+    .incbin "{2}{1}.elf"
 app_{0}_end:"#, idx, app, TARGET_PATH)?;
     }
     Ok(())

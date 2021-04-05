@@ -65,7 +65,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
     // ++++++ hold initproc PCB lock here
     // 将当前进程的所有子进程挂在初始进程 initproc 下面
-    {
+    if task.getpid() != INITPROC.getpid() {
         let mut initproc_inner = INITPROC.acquire_inner_lock();
         for child in inner.children.iter() { // 遍历每个子进程
             child.acquire_inner_lock().parent = Some(Arc::downgrade(&INITPROC)); // 修改其父进程为初始进程
@@ -92,7 +92,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 // 将初始进程 initproc 加入任务管理器
 lazy_static! {
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
-        let inode = open_file("ch7_initproc", OpenFlags::RDONLY).unwrap();
+        let inode = open_file("ch7_usertest", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
         TaskControlBlock::new(v.as_slice())
     });

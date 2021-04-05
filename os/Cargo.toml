@@ -23,3 +23,6 @@ opt-level = 0  # 控制编译器的 --opt-level 参数，也就是优化参数
 debug = true   # 控制编译器是否开启 `-g` 参数
 debug-assertions = true  # 控制调试断言是否开启
 lto = false # forbidden Link Time Optimization
+
+[features]
+board_qemu = []
