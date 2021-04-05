@@ -81,7 +81,7 @@ fn easy_fs_pack() -> std::io::Result<()> {
     let root_inode = Arc::new(EasyFileSystem::root_inode(&efs));
     // 这个过程相当于将 HostOS 上的文件系统中的一个文件复制到我们的 easy-fs 中
     for app in apps {
-        println!("{}", app);
+        // println!("{}", app);
         // load app data from host file system
         let mut host_file = File::open(format!("{}{}", target_path, app)).unwrap();
         let mut all_data: Vec<u8> = Vec::new();

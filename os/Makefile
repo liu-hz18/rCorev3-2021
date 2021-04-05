@@ -68,7 +68,7 @@ $(FS_IMG):
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
 
 kernel:
-#	@cd ../user && make all CHAPTER=$(CHAPTER)
+	@cd ../user && make all CHAPTER=$(CHAPTER)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release --features board_qemu
