@@ -126,8 +126,13 @@ impl EasyFileSystem {
     pub fn root_inode(efs: &Arc<Mutex<Self>>) -> Inode {
         // 根目录对应于文件系统中第一个分配的 inode ，因此它的 inode_id 总会是 0
         let block_device = Arc::clone(&efs.lock().block_device);
+        // acquire efs lock temporarily
+        let (block_id, block_offset) = efs.lock().get_disk_inode_pos(0);
+        // release efs lock
         Inode::new(
             0,
+            block_id,
+            block_offset,
             Arc::clone(efs),
             block_device,
         )
@@ -149,16 +154,6 @@ impl EasyFileSystem {
     pub fn get_data_block_id(&self, data_block_id: u32) -> u32 {
         self.data_area_start_block + data_block_id
     }
-
-    /*
-    fn get_block(&self, block_id: u32) -> Dirty<DataBlock> {
-        Dirty::new(
-            block_id as usize,
-            0,
-            self.block_device.clone(),
-        )
-    }
-    */
 
     // inode 和数据块的分配/回收也由它负责
     pub fn alloc_inode(&mut self) -> u32 {

@@ -27,12 +27,14 @@ pub struct Inode {
 }
 
 impl Inode {
+    /// We should not acquire efs lock here.
     pub fn new(
         inode_id: u32,
+        block_id: u32,
+        block_offset: usize,
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
-        let (block_id, block_offset) = fs.lock().get_disk_inode_pos(inode_id);
         Self {
             inode_id: inode_id as usize,
             block_id: block_id as usize,
@@ -93,13 +95,15 @@ impl Inode {
 
     // find 方法只会被根目录 Inode 调用，文件系统中其他文件的 Inode 不会调用这个方法
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
-        let _ = self.fs.lock();
+        let fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
             self.find_inode_id(name, disk_inode)
             .map(|inode_id| {
-                // 根据查到 inode 编号对应生成一个 Inode 用于后续对文件的访问
+                let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
                 Arc::new(Self::new(
                     inode_id,
+                    block_id,
+                    block_offset,
                     self.fs.clone(),
                     self.block_device.clone(),
                 ))
@@ -181,20 +185,22 @@ impl Inode {
                 &self.block_device,
             );
         });
-        // release efs lock manually because we will acquire it again in Inode::new
-        drop(fs);
+        let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
         // return inode
         Some(Arc::new(Self::new(
             new_inode_id,
+            block_id,
+            block_offset,
             self.fs.clone(),
             self.block_device.clone(),
         )))
+        // release efs lock automatically by compiler
     }
 
     // 收集根目录下的所有文件的文件名并以向量的形式返回回来
     // 只有根目录的 Inode 才会调用
     pub fn ls(&self) -> Vec<String> {
-        let _ = self.fs.lock();
+        let _fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;
             let mut v: Vec<String> = Vec::new();
@@ -217,7 +223,7 @@ impl Inode {
     // 从根目录索引到一个文件之后可以对它进行读写
     // 这里的读写作用在字节序列的一段区间上
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
-        let _ = self.fs.lock();
+        let _fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
             disk_inode.read_at(offset, buf, &self.block_device)
         })
