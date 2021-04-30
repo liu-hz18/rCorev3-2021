@@ -3,7 +3,7 @@ use crate::config::KERNEL_HEAP_SIZE;
 
 // LockedHeap 已经实现了 GlobalAlloc 要求的抽象接口了
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {

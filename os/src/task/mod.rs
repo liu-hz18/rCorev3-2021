@@ -34,7 +34,6 @@ pub fn suspend_current_and_run_next() {
     // There must be an application running.
     // 取出当前正在执行的任务
     let task = take_current_task().unwrap();
-
     // ---- hold current PCB lock
     let mut task_inner = task.acquire_inner_lock();
     let task_cx_ptr2 = task_inner.get_task_cx_ptr2();
@@ -43,7 +42,7 @@ pub fn suspend_current_and_run_next() {
     drop(task_inner);
     // ---- release current PCB lock
     // push back to ready queue.
-    add_task(task);
+    add_task(task); // task was moved here    
     // jump to scheduling cycle
     schedule(task_cx_ptr2);
 }
@@ -92,7 +91,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 // 将初始进程 initproc 加入任务管理器
 lazy_static! {
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
-        let inode = open_file("ch7_usertest", OpenFlags::RDONLY).unwrap();
+        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
         TaskControlBlock::new(v.as_slice())
     });
@@ -109,6 +108,9 @@ pub fn map_virtual_pages(addr: usize, len: usize, port: usize) -> isize {
         return -1;
     }
     if len == 0 { return 0; }
+    if (usable_frames() < len / 4096 + 100 + INITPROC.frames_used()) {
+        return -1;
+    }
     let task = current_task().unwrap();
     let mut inner = task.acquire_inner_lock();
     let map_perm = port_to_permission(port);
@@ -127,10 +129,14 @@ pub fn map_virtual_pages(addr: usize, len: usize, port: usize) -> isize {
     }
     let va_start: VirtAddr = vpn_range.get_start().into();
     let va_end: VirtAddr = vpn_range.get_end().into();
-    // TODO: 处理物理内存不足的错误, 目前直接panic
-    inner.memory_set.push(map_area, None);
+    // 处理物理内存不足的错误, 目前直接panic
+    let succ = inner.memory_set.push(map_area, None);
     drop(inner);
-    (va_end.0 - va_start.0) as isize
+    if succ < 0 {
+        -1
+    } else {
+        (va_end.0 - va_start.0) as isize
+    }
 }
 
 pub fn unmap_virtual_pages(addr: usize, len: usize) -> isize {

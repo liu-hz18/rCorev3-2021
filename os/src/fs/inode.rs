@@ -17,6 +17,7 @@ use alloc::string::String;
 // 硬链接映射表:
 lazy_static! {
     pub static ref HARD_LINK_MAP: Mutex<BTreeMap<String, Arc<OSInode>>> = Mutex::new(BTreeMap::new());
+    pub static ref RECYCLED_MAP: Mutex<BTreeMap<String, Arc<OSInode>>> = Mutex::new(BTreeMap::new());
 }
 
 pub fn link(old_path_str: &str, new_path_str: &str) -> isize {
@@ -42,6 +43,7 @@ pub fn unlink(path_str: &str) -> isize {
     let mut map_lock = HARD_LINK_MAP.lock();
     if let Some(mut old_inode) = map_lock.get(&path) {
         old_inode.inner.lock().inode.destory_nlink();
+        RECYCLED_MAP.lock().insert(path.clone(), old_inode.clone());
         map_lock.remove(&path);
         0
     } else {
@@ -158,7 +160,7 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
     let name_string = String::from(name);
     let mut locked_map = HARD_LINK_MAP.lock();
-    if flags.contains(OpenFlags::CREATE) {  
+    if flags.contains(OpenFlags::CREATE) { 
         if let Some(os_inode) = locked_map.get(&name_string) {
             // clear size
             // 如果文件已经存在则清空文件的内容
@@ -171,16 +173,20 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
             )))
         } else {
             // create file
-            let inode = ROOT_INODE.create(name)
-                .map(|inode| {
-                    Arc::new(OSInode::new(
-                        readable,
-                        writable,
-                        inode,
-                    ))
-                });
-            locked_map.insert(name_string, inode.clone().unwrap());
-            inode
+            if let Some(inode) = ROOT_INODE.create(name) {
+                let osinode = Arc::new(OSInode::new(
+                    readable,
+                    writable,
+                    inode,
+                ));
+                locked_map.insert(name_string, osinode.clone());
+                Some(osinode)
+            } else {
+                let mut recycled_map = RECYCLED_MAP.lock();
+                let inode = recycled_map.remove(&name_string).unwrap();
+                locked_map.insert(name_string, inode.clone());
+                Some(inode)
+            }
         }
     } else {
         if let Some(os_inode) = locked_map.get(&name_string) {

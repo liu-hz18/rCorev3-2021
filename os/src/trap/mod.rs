@@ -50,6 +50,10 @@ pub fn enable_timer_interrupt() {
     unsafe { sie::set_stimer(); }
 }
 
+pub fn disable_timer_interrupt() {
+    unsafe { sie::clear_stimer(); }
+}
+
 #[no_mangle]
 pub fn trap_handler() -> ! {
     // 将 stvec 修改为同模块下另一个函数 trap_from_kernel 的地址

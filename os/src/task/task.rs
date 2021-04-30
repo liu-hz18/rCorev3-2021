@@ -110,6 +110,9 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
+    pub fn frames_used(&self) -> usize {
+        self.inner.lock().memory_set.frames_used()
+    }
     pub fn acquire_inner_lock(&self) -> MutexGuard<TaskControlBlockInner> {
         self.inner.lock()
     }
@@ -246,77 +249,80 @@ impl TaskControlBlock {
         // **** release current PCB lock
     }
     // 实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
-    pub fn fork(self: &Arc<TaskControlBlock>) -> Arc<TaskControlBlock> {
+    pub fn fork(self: &Arc<TaskControlBlock>) -> Option<Arc<TaskControlBlock>> {
         // ---- hold parent PCB lock
         let mut parent_inner = self.acquire_inner_lock();
         // 复制父进程地址空间
         // 两个进程的应用数据由于地址空间复制的原因也是完全相同的
         // copy user space(include trap context)
-        let memory_set = MemorySet::from_existed_user(
-            &parent_inner.memory_set
-        );
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-        // alloc a pid and a kernel stack in kernel space
-        let pid_handle = pid_alloc();
-        let kernel_stack = KernelStack::new(&pid_handle);
-        let kernel_stack_top = kernel_stack.get_top();
-        // push a goto_trap_return task_cx on the top of kernel stack
-        // 子进程内核栈上压入一个初始化的任务上下文，使得内核一旦通过任务切换到该进程，就会跳转到 trap_return 来进入用户态
-        let task_cx_ptr = kernel_stack.push_on_top(TaskContext::goto_trap_return());
-        // copy fd table, 子进程需要完全继承父进程的文件描述符表来和父进程共享所有文件
-        // 这样，即使我们 仅手动为初始进程 initproc 打开了标准输入输出，所有进程也都可以访问它们
-        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
-        for fd in parent_inner.fd_table.iter() {
-            if let Some(file) = fd {
-                new_fd_table.push(Some(file.clone()));
-            } else {
-                new_fd_table.push(None);
+        if let Some(memory_set) = MemorySet::from_existed_user(&parent_inner.memory_set) {
+            let trap_cx_ppn = memory_set
+                .translate(VirtAddr::from(TRAP_CONTEXT).into())
+                .unwrap()
+                .ppn();
+            // alloc a pid and a kernel stack in kernel space
+            let pid_handle = pid_alloc();
+            let kernel_stack = KernelStack::new(&pid_handle);
+            let kernel_stack_top = kernel_stack.get_top();
+            // push a goto_trap_return task_cx on the top of kernel stack
+            // 子进程内核栈上压入一个初始化的任务上下文，使得内核一旦通过任务切换到该进程，就会跳转到 trap_return 来进入用户态
+            let task_cx_ptr = kernel_stack.push_on_top(TaskContext::goto_trap_return());
+            // copy fd table, 子进程需要完全继承父进程的文件描述符表来和父进程共享所有文件
+            // 这样，即使我们 仅手动为初始进程 initproc 打开了标准输入输出，所有进程也都可以访问它们
+            let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+            for fd in parent_inner.fd_table.iter() {
+                if let Some(file) = fd {
+                    new_fd_table.push(Some(file.clone()));
+                } else {
+                    new_fd_table.push(None);
+                }
             }
+            let mut new_mail_box = MailBox::new();
+            for mail in parent_inner.mail_box.packets.iter() {
+                new_mail_box.push(*mail);
+            }
+            let task_control_block = Arc::new(TaskControlBlock {
+                pid: pid_handle,
+                kernel_stack,
+                inner: Mutex::new(TaskControlBlockInner {
+                    task_cx_ptr: task_cx_ptr as usize,
+                    task_status: TaskStatus::Ready,
+
+                    task_stride: 0,
+                    task_priority: parent_inner.task_priority,
+
+                    memory_set,
+                    trap_cx_ppn,
+                    base_size: parent_inner.base_size, // 让子进程和父进程的 base_size ，也即应用数据的大小保持一致
+
+                    parent: Some(Arc::downgrade(self)), // 将父进程的弱引用计数放到子进程的进程控制块中
+                    children: Vec::new(),
+                    exit_code: 0,
+
+                    fd_table: new_fd_table,
+
+                    mail_box: new_mail_box,
+                }),
+            });
+            // 注意父子进程关系的维护
+            // add child
+            parent_inner.children.push(task_control_block.clone());
+            drop(parent_inner);
+            // modify kernel_sp in trap_cx
+            // 子进程的 Trap 上下文也是完全从父进程复制过来的
+            // 保证子进程进入用户态和其父进程回到用户态的那一瞬间 CPU 的状态是完全相同的
+            // **** acquire child PCB lock
+            let trap_cx = task_control_block.acquire_inner_lock().get_trap_cx();
+            // **** release child PCB lock
+            trap_cx.kernel_sp = kernel_stack_top;
+            // return
+            Some(task_control_block)
+            // ---- release parent PCB lock
+        } else {
+            println!("fork inner fail");
+            drop(parent_inner);
+            None
         }
-        let mut new_mail_box = MailBox::new();
-        for mail in parent_inner.mail_box.packets.iter() {
-            new_mail_box.push(*mail);
-        }
-        let task_control_block = Arc::new(TaskControlBlock {
-            pid: pid_handle,
-            kernel_stack,
-            inner: Mutex::new(TaskControlBlockInner {
-                task_cx_ptr: task_cx_ptr as usize,
-                task_status: TaskStatus::Ready,
-
-                task_stride: 0,
-                task_priority: parent_inner.task_priority,
-
-                memory_set,
-                trap_cx_ppn,
-                base_size: parent_inner.base_size, // 让子进程和父进程的 base_size ，也即应用数据的大小保持一致
-
-                parent: Some(Arc::downgrade(self)), // 将父进程的弱引用计数放到子进程的进程控制块中
-                children: Vec::new(),
-                exit_code: 0,
-
-                fd_table: new_fd_table,
-
-                mail_box: new_mail_box,
-            }),
-        });
-        // 注意父子进程关系的维护
-        // add child
-        parent_inner.children.push(task_control_block.clone());
-        drop(parent_inner);
-        // modify kernel_sp in trap_cx
-        // 子进程的 Trap 上下文也是完全从父进程复制过来的
-        // 保证子进程进入用户态和其父进程回到用户态的那一瞬间 CPU 的状态是完全相同的
-        // **** acquire child PCB lock
-        let trap_cx = task_control_block.acquire_inner_lock().get_trap_cx();
-        // **** release child PCB lock
-        trap_cx.kernel_sp = kernel_stack_top;
-        // return
-        task_control_block
-        // ---- release parent PCB lock
     }
     pub fn getpid(&self) -> usize {
         self.pid.0

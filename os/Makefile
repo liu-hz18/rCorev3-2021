@@ -43,7 +43,7 @@ READOBJ := rust-readobj -all
 ADDR := 0x8002000c
 
 
-CHAPTER := 7
+CHAPTER := 8
 
 # Disassembly
 DISASM ?= -x -D
@@ -65,7 +65,7 @@ $(DEBUG_KERNEL_BIN): kernel-debug
 	@$(OBJCOPY) $(DEBUG_KERNEL_ELF) --strip-all -O binary $@
 
 $(FS_IMG):
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/build/elf/ -t ../user/target/riscv64gc-unknown-none-elf/release/
 
 kernel:
 	@cd ../user && make all CHAPTER=$(CHAPTER)
@@ -171,8 +171,7 @@ else
 endif
 
 debug: build
-	@tmux new-session -d \
-		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s -S" && \
+	@tmux new-session -d "qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(DEBUG_KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -drive file=$(FS_IMG),if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -s -S" && \
 		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
 		tmux -2 attach-session -d
 

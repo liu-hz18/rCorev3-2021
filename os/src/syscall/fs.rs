@@ -4,6 +4,7 @@ use crate::mm::{
     translated_refmut,
     virtual_addr_range_printable,
     virtual_addr_range_writable,
+    virtual_addr_printable,
     virtual_addr_writable,
     translated_str,
     translated_virtual_ptr
@@ -11,6 +12,7 @@ use crate::mm::{
 use crate::task::{current_user_token, current_task_id, current_task, set_task_mail};
 use crate::fs::{make_pipe, OpenFlags, open_file, link, unlink, OSInode};
 use alloc::sync::Arc;
+use alloc::string::String;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -72,7 +74,11 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
             UserBuffer::new(buffers)
         ) as isize
     } else {
-        -1
+        if fd == 1 || fd == 2 { 
+            0 
+        } else {
+            -1
+        }
     }
 }
 
@@ -84,20 +90,41 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     if fd >= inner.fd_table.len() {
         return -1;
     }
-    if let Some(file) = &inner.fd_table[fd] {
-        if !file.readable() {
-            return -1;
+    if virtual_addr_range_writable(token, buf, len) {
+        if let Some(file) = &inner.fd_table[fd] {
+            if !file.readable() {
+                return -1;
+            }
+            let file = file.clone();
+            // release Task lock manually to avoid deadlock
+            drop(inner);
+            let ret = file.read(
+                UserBuffer::new(translated_byte_buffer(token, buf, len))
+            ) as isize;
+            ret
+        } else {
+            -1
         }
-        let file = file.clone();
-        // release Task lock manually to avoid deadlock
-        drop(inner);
-        let ret = file.read(
-            UserBuffer::new(translated_byte_buffer(token, buf, len))
-        ) as isize;
-        ret
     } else {
         -1
+    }    
+}
+
+pub fn valid_file_name(path: &String) -> bool {
+    if path.len() == 0 {
+        return false;
     }
+    // not include ! " #  $ % & ' ( ) * + - , - . /
+    if (path.as_bytes()[0] >= 32 && path.as_bytes()[0] <= 47) || path.as_bytes()[0] > 122 {
+        return false;
+    }
+    for ch in path.bytes() { 
+        // 不包含 '/' '\'
+        if ch < 32 || ch > 126 || ch == 47 || ch == 92 {
+            return false;
+        }
+    }
+    return true;
 }
 
 /// 功能：打开一个标准文件，并返回可以访问它的文件描述符
@@ -114,15 +141,23 @@ pub fn sys_openat(_dirfd: usize, path: *const u8, flags: u32, _mode: u32) -> isi
     // 3. 打开文件数量达到上限
     let task = current_task().unwrap();
     let token = current_user_token();
-    let path = translated_str(token, path);
-    if let Some(inode) = open_file(
-        path.as_str(),
-        OpenFlags::from_bits(flags).unwrap()
-    ) {
-        let mut inner = task.acquire_inner_lock();
-        let fd = inner.alloc_fd();
-        inner.fd_table[fd] = Some(inode);
-        fd as isize
+    let (readable, _path) = virtual_addr_printable(token, path as usize);
+    if readable {
+        let path = translated_str(token, path);
+        if !valid_file_name(&path) {
+            return -1;
+        }
+        if let Some(inode) = open_file(
+            path.as_str(),
+            OpenFlags::from_bits(flags).unwrap()
+        ) {
+            let mut inner = task.acquire_inner_lock();
+            let fd = inner.alloc_fd();
+            inner.fd_table[fd] = Some(inode);
+            fd as isize
+        } else {
+            -1
+        }
     } else {
         -1
     }
@@ -159,6 +194,9 @@ pub fn sys_close(fd: usize) -> isize {
 pub fn sys_pipe(pipe: *mut usize) -> isize {
     let task = current_task().unwrap();
     let token = current_user_token();
+    if !virtual_addr_writable(token, pipe as usize) {
+        return -1;
+    }
     let mut inner = task.acquire_inner_lock();
     let (pipe_read, pipe_write) = make_pipe();
     // 为读端和写端分配文件描述符并将它们放置在文件描述符表中的相应位置中
@@ -262,9 +300,18 @@ pub fn sys_mail_write(pid: usize, buffer: *mut u8, len: usize) -> isize {
 // 可能的错误: 链接同名文件
 pub fn sys_linkat(_olddirfd: i32, oldpath: *const u8, _newdirfd: i32, newpath: *const u8, _flags: u32) -> isize {
     let token = current_user_token();
-    let old_path = translated_str(token, oldpath);
-    let new_path = translated_str(token, newpath);
-    link(&old_path, &new_path)
+    let (old_path_readable, _old_path) = virtual_addr_printable(token, oldpath as usize);
+    let (new_path_readable, _new_path) = virtual_addr_printable(token, newpath as usize);
+    if (old_path_readable && new_path_readable) {
+        let new_path = translated_str(token, newpath);
+        let old_path = translated_str(token, oldpath);
+        if !valid_file_name(&new_path) || !valid_file_name(&old_path) {
+            return -1;
+        }
+        link(&old_path, &new_path)
+    } else {
+        -1
+    }
 }
 
 // 取消一个文件路径到文件的链接
@@ -276,8 +323,16 @@ pub fn sys_linkat(_olddirfd: i32, oldpath: *const u8, _newdirfd: i32, newpath: *
 // 可能的错误: 文件不存在
 pub fn sys_unlinkat(_dirfd: i32, path: *const u8, _flags: u32) -> isize {
     let token = current_user_token();
-    let path = translated_str(token, path);
-    unlink(&path)
+    let (path_readable, _path) = virtual_addr_printable(token, path as usize);
+    if path_readable {
+        let path_str = translated_str(token, path);
+        if !valid_file_name(&path_str) {
+            return -1;
+        }
+        unlink(&path_str)
+    } else {
+        -1
+    }    
 }
 
 // 获取文件状态
@@ -301,7 +356,6 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     if let Some(file) = &inner.fd_table[fd] {
         unsafe {
             let st_ptr = translated_virtual_ptr(token, st);
-            // TODO: 维护并获取file的状态
             if let Some(pa_st) = st_ptr.as_mut() {
                 (*pa_st).ino = file.inode_id() as u64;
                 (*pa_st).mode = StatMode::FILE;

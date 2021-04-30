@@ -4,6 +4,7 @@ use alloc::vec;
 use alloc::string::String;
 use bitflags::*;
 use crate::mm::{PhysAddr};
+use crate::config::{TRAP_CONTEXT};
 
 // 在我们切换任务的时候， satp 也必须被同时切换
 bitflags! {
@@ -177,6 +178,10 @@ impl PageTable {
     }
 }
 
+extern "C" {
+    fn ekernel(); // 应用不能修改内核地址空间的数据
+}
+
 // 将 应用地址空间中一个缓冲区 转化为在 内核空间中能够直接访问 的形式
 pub fn translated_byte_buffer(
     token: usize, // 某个应用地址空间的 token 
@@ -217,12 +222,16 @@ pub fn virtual_addr_printable(token: usize, va: usize) -> (bool, usize) {
 }
 
 pub fn virtual_addr_writable(token: usize, va: usize) -> bool {
-    let va = VirtAddr::from(va);
-    let page_table = PageTable::from_token(token);
-    if let Some(pte) = page_table.translate_pte(va) {
-        pte.is_valid() && pte.readable() && pte.writable()
-    } else {
+    if va >= TRAP_CONTEXT {
         false
+    } else {
+        let va = VirtAddr::from(va);
+        let page_table = PageTable::from_token(token);
+        if let Some(pte) = page_table.translate_pte(va) {
+            pte.is_valid() && pte.readable() && pte.writable()
+        } else {
+            false
+        }
     }
 }
 

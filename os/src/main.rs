@@ -6,8 +6,7 @@
 #![feature(panic_info_message)]
 #![feature(const_in_array_repeat_expressions)]
 #![feature(alloc_error_handler)]
-
-// use log::{error, warn, info, debug, trace};
+#![feature(map_into_keys_values)]
 
 #[macro_use]
 extern crate bitflags;

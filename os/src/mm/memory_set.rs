@@ -16,6 +16,7 @@ use crate::config::{
     USER_STACK_SIZE,
     MMIO
 };
+use crate::task::exit_current_and_run_next;
 
 extern "C" {
     fn stext();
@@ -81,6 +82,13 @@ impl MemorySet {
         }
         false
     }
+    pub fn frames_used(&self) -> usize {
+        let mut frames: usize = 0;
+        for area in self.areas.iter() {
+            frames += area.vpn_range.get_end().0 - area.vpn_range.get_start().0;
+        }
+        frames
+    }
     /// Assume that no conflicts.
     /// 在当前地址空间插入一个 Framed 方式映射到 物理内存的逻辑段
     /// 该方法的调用者要保证同一地址空间内的任意两个逻辑段不能存在交集
@@ -102,12 +110,17 @@ impl MemorySet {
     }
     // 在当前地址空间插入一个新的逻辑段 map_area
     // 如果它是以 Framed 方式映射到 物理内存，还可以可选地在那些被映射到的物理页帧上写入一些初始化数据 data
-    pub fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        map_area.map(&mut self.page_table);
+    pub fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) -> isize {
+        let succ = map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
         }
         self.areas.push(map_area);
+        if succ < 0 { // 内存分配失败
+            -1
+        } else {
+            0
+        }
     }
     pub fn unmap(&mut self, vpn_range: VPNRange) {
         for vpn in vpn_range {
@@ -220,8 +233,10 @@ impl MemorySet {
                 // 确认这一区域访问方式的 限制并将其转换为 MapPermission 类型
                 let ph_flags = ph.flags();
                 if ph_flags.is_read() { map_perm |= MapPermission::R; }
-                if ph_flags.is_write() { map_perm |= MapPermission::W; }
-                if ph_flags.is_execute() { map_perm |= MapPermission::X; }
+                if ph_flags.is_execute() { map_perm |= MapPermission::X; } 
+                else if ph_flags.is_write() {
+                    map_perm |= MapPermission::W;
+                }
                 // 创建逻辑段 map_area
                 let map_area = MapArea::new(
                     start_va,
@@ -268,28 +283,39 @@ impl MemorySet {
         )
     }
     // 复制一个完全相同的地址空间
-    pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
+    pub fn from_existed_user(user_space: &MemorySet) -> Option<MemorySet> {
         // 新创建一个空的地址空间
         let mut memory_set = Self::new_bare();
         // map trampoline
         // 为这个地址空间映射上跳板页面
         memory_set.map_trampoline();
+        // println!("map tranpolin in exist user");
         // 剩下的逻辑段都包含在 areas 中
         // copy data sections/trap_context/user_stack
+        let mut succ = true;
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);
             // 在插入的时候就已经实际分配了物理页帧了
-            memory_set.push(new_area, None);
-            // copy data from another space
-            // 遍历逻辑段中的每个虚拟页面，对应完成数据复制
-            for vpn in area.vpn_range {
-                // 找物理页帧
-                let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
-                dst_ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+            if memory_set.push(new_area, None) < 0 {
+                succ = false;
+                break;
+            } else {
+                // copy data from another space
+                // 遍历逻辑段中的每个虚拟页面，对应完成数据复制
+                for vpn in area.vpn_range {
+                    // 找物理页帧
+                    let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                    let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                    dst_ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                }
             }
         }
-        memory_set
+        // println!("exit from exist user");
+        if succ {
+            Some(memory_set)
+        } else {
+            None
+        }        
     }
     pub fn activate(&self) {
         // 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数，使得其 分页模式为 SV39, 且将当前多级页表的根节点所在的物理页号填充进去
@@ -353,7 +379,7 @@ impl MapArea {
         }
     }
     // 单个虚拟页面进行映射/解映射
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> isize {
         // 虚拟页号 vpn 已经确定
         let ppn: PhysPageNum;
         // 页表项的 物理页号则取决于当前逻辑段映射到物理内存的方式
@@ -366,14 +392,18 @@ impl MapArea {
             // 此时页表项中的物理页号自然就是 这个被分配的物理页帧的物理页号
             // 还需要将这个物理页帧挂在逻辑段的 data_frames 字段下
             MapType::Framed => {
-                let frame = frame_alloc().unwrap();
-                ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
+                if let Some(frame) = frame_alloc() {
+                    ppn = frame.ppn;
+                    self.data_frames.insert(vpn, frame);
+                } else {
+                    return -1;
+                }
             }
         }
         // 页表项的标志位来源于当前逻辑段的类型为 MapPermission 的统一配置
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
+        return 0;
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         match self.map_type {
@@ -387,10 +417,13 @@ impl MapArea {
         page_table.unmap(vpn); // 删除以传入的虚拟页号为键的 键值对即可
     }
     // 将 当前逻辑段到物理内存的映射 从传入的该逻辑段所属的地址空间的多级页表page_table中 加入或删除
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn map(&mut self, page_table: &mut PageTable) -> isize {
         for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+            if self.map_one(page_table, vpn) < 0 {
+                return -1;
+            }
         }
+        return 0;
     }
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {

@@ -7,6 +7,7 @@
 
 #[macro_use]
 pub mod console;
+pub mod ch8;
 mod syscall;
 mod lang_items;
 
@@ -16,8 +17,8 @@ extern crate core;
 extern crate bitflags;
 
 use buddy_system_allocator::LockedHeap;
-pub use console::{STDIN, STDOUT};
-use syscall::*;
+pub use console::{flush, STDIN, STDOUT};
+pub use syscall::*;
 use alloc::vec::Vec;
 
 // 在应用中使能动态内存分配
@@ -26,7 +27,7 @@ const USER_HEAP_SIZE: usize = 16384;
 static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
 
 #[global_allocator]
-static HEAP: LockedHeap = LockedHeap::empty();
+static HEAP: LockedHeap<32> = LockedHeap::empty();
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
@@ -131,7 +132,10 @@ const AT_FDCWD: isize = -100;
 
 pub fn write(fd: usize, buf: &[u8]) -> isize { sys_write(fd, buf) }
 pub fn read(fd: usize, buf: &mut [u8]) -> isize { sys_read(fd, buf) }
-pub fn exit(exit_code: i32) -> ! { sys_exit(exit_code) }
+pub fn exit(exit_code: i32) -> ! { 
+    console::flush();
+    sys_exit(exit_code) 
+}
 pub fn yield_() -> isize { sys_yield() }
 pub fn get_time() -> isize {
     let time = TimeVal::new();
@@ -166,15 +170,39 @@ pub fn exec(path: &str, args: &[*const u8]) -> isize { sys_exec(path, args) }
 
 // 等待任意一个子进程结束
 pub fn wait(exit_code: &mut i32) -> isize {
-    sys_waitpid(-1, exit_code as *mut _)
+    loop {
+        match sys_waitpid(-1, exit_code as *mut _) {
+            -2 => {
+                sys_yield();
+            }
+            n => {
+                return n;
+            }
+        }
+    }
 }
 pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
-    sys_waitpid(pid as isize, exit_code as *mut _)
+    loop {
+        match sys_waitpid(pid as isize, exit_code as *mut _) {
+            -2 => {
+                sys_yield();
+            }
+            n => {
+                return n;
+            }
+        }
+    }
 }
+
 pub fn spawn(path: &str) -> isize {
     sys_spawn(path)
 }
-pub fn close(fd: usize) -> isize { sys_close(fd) }
+pub fn close(fd: usize) -> isize {
+    if fd == STDOUT {
+        console::flush();
+    } 
+    sys_close(fd) 
+}
 pub fn pipe(pipe_fd: &mut [usize]) -> isize { sys_pipe(pipe_fd) }
 pub fn mail_read(buf: &mut [u8]) -> isize {
     sys_mail_read(buf)

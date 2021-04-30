@@ -29,6 +29,7 @@ mod process;
 use fs::*;
 use process::*;
 use crate::timer::{TimeVal};
+use crate::trap::{enable_timer_interrupt, disable_timer_interrupt};
 
 pub fn syscall(syscall_id: usize, args: [usize; 5]) -> isize {
     // 并不会实际处理系统调用而只是会根据 syscall ID 分发到具体的处理函数
@@ -48,7 +49,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 5]) -> isize {
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_FORK => sys_fork(),
         SYSCALL_EXEC => sys_exec(args[0] as *const u8, args[1] as *const usize),
-        SYSCALL_WAITPID => sys_waitpid_blocking(args[0] as isize, args[1] as *mut i32),
+        SYSCALL_WAITPID => sys_waitpid_non_blocking(args[0] as isize, args[1] as *mut i32),
         SYSCALL_SPAWN => sys_spawn(args[0] as *const u8),
         // ch6
         SYSCALL_CLOSE => sys_close(args[0]),

@@ -8,13 +8,15 @@ use crate::task::{
     current_task,
     current_user_token,
     add_task,
+    INITPROC,
 };
 use crate::timer::{get_time_sys, TimeVal};
 use crate::mm::{
     translated_str,
     translated_refmut,
     translated_ref,
-    virtual_addr_writable
+    virtual_addr_writable,
+    usable_frames
 };
 use crate::fs::{
     open_file,
@@ -86,17 +88,25 @@ pub fn sys_getpid() -> isize {
 // 每个进程可能有多个子进程，但最多只能有一个父进程
 pub fn sys_fork() -> isize {
     let current_task = current_task().unwrap();
-    let new_task = current_task.fork();
-    let new_pid = new_task.pid.0;
-    // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.acquire_inner_lock().get_trap_cx();
-    // 将子进程的 Trap 上下文用来存放系统调用返回值的 a0 寄存器修改为 0 
-    // we do not have to move to next instruction since we have done it before
-    // for child process, fork returns 0
-    trap_cx.x[10] = 0;
-    // add new task to scheduler
-    add_task(new_task);
-    new_pid as isize
+    // println!("before alloc {}, remain {}", current_task.frames_used(), usable_frames());
+    if (usable_frames() < current_task.frames_used() + 100 + INITPROC.frames_used()) {
+        // return -1;
+        exit_current_and_run_next(-1);
+    }
+    if let Some(new_task) = current_task.fork() {
+        let new_pid = new_task.pid.0;
+        // modify trap context of new_task, because it returns immediately after switching
+        let trap_cx = new_task.acquire_inner_lock().get_trap_cx();
+        // 将子进程的 Trap 上下文用来存放系统调用返回值的 a0 寄存器修改为 0 
+        // we do not have to move to next instruction since we have done it before
+        // for child process, fork returns 0
+        trap_cx.x[10] = 0;
+        // add new task to scheduler
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
 // 我们在 sys_exec 所需的应用 ELF 数据就不再需要通过应用加载器从内核的数据段获取，而是从文件系统中获取即可
@@ -145,7 +155,9 @@ pub fn sys_waitpid_non_blocking(
     //  3. 传入的地址 status 不为 0 但是不合法
     if inner.children
         .iter()
-        .find(|p| {pid == -1 || pid == 0 || pid as usize == p.getpid()})
+        .find(|p| {
+            pid == -1 || pid == 0 || pid as usize == p.getpid()
+        })
         .is_none() {
         return -1;
         // ---- release current PCB lock
@@ -163,7 +175,7 @@ pub fn sys_waitpid_non_blocking(
         // 这是对于该子进程控制块的唯一一次强引用, 即它不会出现在某个进程的子进程向量中
         let child = inner.children.remove(idx);
         // confirm that child will be deallocated after removing from children list
-        assert_eq!(Arc::strong_count(&child), 1);
+        assert!(Arc::strong_count(&child) == 1 || Arc::strong_count(&child) == 2);
         // 收集的子进程信息返回回去
         let found_pid = child.getpid();
         // ++++ temporarily hold child lock
@@ -179,7 +191,7 @@ pub fn sys_waitpid_non_blocking(
             return -1 as isize;
         }
     } else {
-        -1
+        -2
     }
     // ---- release current PCB lock automatically
 }
@@ -259,16 +271,19 @@ pub fn sys_spawn(path: *const u8) -> isize {
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let all_data = app_inode.read_all();
         let current_task = current_task().unwrap();
-        let new_task = current_task.fork();
-        let new_pid = new_task.pid.0;
-        // modify trap context of new_task, because it returns immediately after switching
-        let trap_cx = new_task.acquire_inner_lock().get_trap_cx();
-        // we do not have to move to next instruction since we have done it before
-        // for child process, fork returns 0
-        trap_cx.x[10] = 0;
-        new_task.exec(all_data.as_slice(), args_vec);
-        add_task(new_task);
-        new_pid as isize
+        if let Some(new_task) = current_task.fork() {
+            let new_pid = new_task.pid.0;
+            // modify trap context of new_task, because it returns immediately after switching
+            let trap_cx = new_task.acquire_inner_lock().get_trap_cx();
+            // we do not have to move to next instruction since we have done it before
+            // for child process, fork returns 0
+            trap_cx.x[10] = 0;
+            new_task.exec(all_data.as_slice(), args_vec);
+            add_task(new_task);
+            new_pid as isize
+        } else {
+            -1
+        }
     } else {
         -1
     }

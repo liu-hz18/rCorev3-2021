@@ -76,14 +76,16 @@ impl FrameAllocator for StackFrameAllocator {
     fn alloc(&mut self) -> Option<PhysPageNum> {
         // 检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
+            // println!("[kernel] alloc one frame. l:r={}:{}", self.current, self.end);
             Some(ppn.into())
         } else {
             // 从之前从未分配过的物理页号区间 [current,end) 上进行分配，
             // 我们分配它的 左端点 current ，同时将管理器内部维护的 current 加一代表 current 此前已经被分配过了
             if self.current == self.end { // 内存耗尽分配失败
-                info!("[kernel] Out Of Memory! No physical frames can be allocated! l=r={}", self.current);
+                // println!("[kernel] Out Of Memory! No physical frames can be allocated! l=r={}", self.current);
                 None
             } else {
+                // println!("[kernel] alloc one frame. l:r={}:{}", self.current, self.end);
                 self.current += 1;
                 Some((self.current - 1).into())
             }
@@ -129,6 +131,7 @@ pub fn init_frame_allocator() {
 // 将一个物理页帧的生命周期绑定到一个 FrameTracker 变量上，
 // 当一个 FrameTracker 被创建的时候，我们需要从 FRAME_ALLOCATOR 中分配一个 被清零的物理页帧
 pub fn frame_alloc() -> Option<FrameTracker> {
+    // println!("[kernel] alloc one frame.");
     FRAME_ALLOCATOR
         .lock()
         .alloc()
