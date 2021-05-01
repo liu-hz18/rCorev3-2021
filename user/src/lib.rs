@@ -59,7 +59,7 @@ pub extern "C" fn _start(argc: usize, argv: usize) -> ! {
     }
     // v.as_slice(): type = &[&str]
     exit(main(argc, v.as_slice())); // 使用它退出应用程序并将返回值告知 底层的批处理系统
-    panic!("unreachable after sys_exit!");
+    unreachable!("unreachable after sys_exit!");
 }
 
 #[linkage = "weak"]

@@ -11,3 +11,10 @@ bitflags = "1.2.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 spin = "0.9"
 rand = { version = "0.8.3", default-features = false, features = ["alloc", "small_rng"] }
+
+# 开发模板, 对应`cargo build`命令
+[profile.dev]
+opt-level = 0  # 控制编译器的 --opt-level 参数，也就是优化参数
+debug = true   # 控制编译器是否开启 `-g` 参数
+debug-assertions = true  # 控制调试断言是否开启
+lto = false # forbidden Link Time Optimization

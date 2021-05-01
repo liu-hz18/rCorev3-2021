@@ -111,7 +111,7 @@ pub fn trap_handler() -> ! {
             exit_current_and_run_next(-2); // 直接切换并运行下一个 应用程序
         },
         Trap::Exception(Exception::IllegalInstruction) => {
-            info!("[kernel] IllegalInstruction in Application {} (killed), core dumped.", current_task_id());
+            info!("[kernel] IllegalInstruction (stval={:#x}, sepc={:#x}) in Application {} (killed), core dumped.", stval, current_trap_cx().sepc, current_task_id());
             exit_current_and_run_next(-3);
         },
         // 抢占式调度

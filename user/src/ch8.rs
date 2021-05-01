@@ -31,10 +31,16 @@ where
     assert!(wait(&mut exit_code) < 0);
 }
 
+#[inline(never)]
 pub fn get_pc() -> usize {
     let mut ra: usize;
     unsafe {
-        llvm_asm!("mv $0, ra" : "=r"(ra) ::: "volatile");
+        llvm_asm!("addi t0, ra, 0" 
+            : "={t0}"(ra) 
+            :
+            : "memory"
+            : "volatile"
+        );
     }
     ra
 }

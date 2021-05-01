@@ -32,7 +32,8 @@ fn main() {
     easy_fs_pack().expect("Error when packing easy-fs!");
 }
 
-const IMG_SIZE: u32 = 8192; // KB
+const IMG_SIZE_MB: u32 = 24; // MB
+const IMG_SIZE: u32 = IMG_SIZE_MB * 1024; // KB
 const BLOCK_NUM: u32 = IMG_SIZE * 2; // blocks
 
 // 在 easy-fs-fuse 这个应用正常退出的过程中，块缓存因生命周期结束会被回收，届时如果 modified 标志为 true 就会将修改写回磁盘
@@ -106,7 +107,7 @@ fn efs_test() -> std::io::Result<()> {
             .write(true)
             .create(true)
             .open("target/fs.img")?;
-        f.set_len(8192 * 512).unwrap();
+        f.set_len((IMG_SIZE as u64) * 512).unwrap();
         f
     })));
     EasyFileSystem::create(
