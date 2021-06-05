@@ -22,7 +22,7 @@ fn file_test0(idx: usize) {
 const NUM: usize = 65536;
 
 #[no_mangle]
-pub unsafe fn main() -> i32 {
+pub fn main() -> i32 {
     for idx in 0..NUM {
         file_test0(idx);
     }
